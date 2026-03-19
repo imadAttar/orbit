@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicknisi/tauri-v2-schema/refs/heads/main/schema.json",
+  "productName": "Orbit",
+  "version": "0.1.1",
+  "identifier": "com.orbit.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/*"
+    ],
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1N0VFQTNCNjRGRTQzQTEKUldTaFEvNWtPK3ArNVRGSk1ScTBqZVNBblA4aTV3eXZjOHR3bVJ5Z3ZhQXdKd1BPaXIxaUQrQ3YK",
+      "endpoints": [
+        "https://github.com/imadAttar/orbit/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https://eu.aptabase.com https://github.com https://raw.githubusercontent.com; img-src 'self' asset: https://asset.localhost; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
+    },
+    "windows": [
+      {
+        "title": "Orbit",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "decorations": true,
+        "resizable": true
+      }
+    ]
+  }
+}

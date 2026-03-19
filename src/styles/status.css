@@ -1,0 +1,148 @@
+/* ═══════════════════════ STATUS BAR ═══════════════════════ */
+
+/* --- Update banner --- */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 14px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.update-banner--ready {
+  background: var(--green);
+  color: var(--bg);
+}
+
+.update-banner--error {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+.update-banner__btn {
+  background: var(--overlay-btn);
+  color: inherit;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.update-banner__btn:hover {
+  background: rgba(0, 0, 0, 0.35); /* btn hover darker */
+}
+
+.update-banner__progress {
+  flex: 1;
+  height: 4px;
+  background: var(--overlay-btn);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.update-banner__bar {
+  height: 100%;
+  background: var(--shadow-medium);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  height: 24px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  flex-shrink: 0;
+  letter-spacing: 0.03em;
+}
+
+.status-bar > span,
+.status-bar > div:not(.status-bar__sep) {
+  padding: 0 12px;
+}
+
+.status-bar__spacer {
+  flex: 1;
+}
+
+.status-bar__sep {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.status-bar__state {
+  font-weight: 500;
+  text-transform: lowercase;
+}
+.status-bar__state--working {
+  color: var(--yellow, #f9e2af);
+}
+.status-bar__state--idle {
+  color: var(--green, #a6e3a1);
+}
+.status-bar__state--waiting {
+  color: var(--accent);
+}
+
+.status-bar__cost {
+  color: var(--accent);
+  font-weight: 600;
+  text-shadow: 0 0 12px var(--accent-glow);
+  letter-spacing: 0.05em;
+}
+
+.status-bar__badge {
+  background: var(--accent);
+  color: var(--bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.status-bar__git-btn {
+  background: transparent;
+  border: 1px solid var(--green);
+  color: var(--green);
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-family: var(--font-chrome);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.status-bar__git-btn:hover {
+  background: var(--green);
+  color: var(--bg);
+}
+
+.status-bar__git-btn--pulse {
+  animation: git-pulse 2s ease-in-out infinite;
+}
+
+@keyframes git-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+

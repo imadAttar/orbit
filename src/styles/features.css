@@ -1,0 +1,462 @@
+/* ═══════════════════════ SPLIT PANE ═══════════════════════ */
+
+.split-pane {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.split-pane__panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.split-pane__panel--focused {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.split-divider {
+  width: 3px;
+  cursor: col-resize;
+  background: var(--border);
+  transition: all 150ms;
+  flex-shrink: 0;
+}
+
+.split-divider:hover {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* ═══════════════════════ GIT PANEL ═══════════════════════ */
+
+.git-panel {
+  background: var(--sidebar-bg);
+  border-top: 1px solid var(--border);
+  max-height: 250px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  animation: panel-slide-up 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes panel-slide-up {
+  from { max-height: 0; opacity: 0; transform: translateY(8px); }
+  to { max-height: 250px; opacity: 1; transform: translateY(0); }
+}
+
+.git-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-panel__title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.3px;
+}
+
+.git-panel__files {
+  padding: 4px 14px;
+  overflow-y: auto;
+  max-height: 80px;
+}
+
+.git-panel__file {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 10px;
+}
+
+.git-panel__file-status {
+  color: var(--yellow);
+  font-weight: 600;
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.git-panel__file-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-panel__diff-toggle {
+  padding: 4px 14px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.git-panel__diff-toggle summary {
+  cursor: pointer;
+}
+
+.git-panel__diff {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 10px;
+  overflow: auto;
+  max-height: 100px;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.git-panel__commit {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.git-panel__commit-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  outline: none;
+  resize: none;
+  transition: border-color 100ms;
+}
+
+.git-panel__commit-input:focus {
+  border-color: var(--accent);
+}
+
+.git-panel__error {
+  color: var(--danger);
+  font-size: 10px;
+}
+
+.git-panel__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.git-panel__status--progress {
+  color: var(--yellow);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.git-panel__status--success {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ═══════════════════════ CONTEXT BAR ═══════════════════════ */
+
+.context-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  letter-spacing: 0.3px;
+}
+
+.context-bar__label {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 1px;
+}
+
+.context-bar__track {
+  width: 60px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.context-bar__fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 300ms, background 300ms;
+}
+
+.context-bar__pct {
+  font-weight: 600;
+  min-width: 24px;
+}
+
+.context-bar__model {
+  color: var(--text-dim);
+}
+
+/* ═══════════════════════ DIFF VIEWER ═══════════════════════ */
+
+.diff-viewer {
+  background: var(--sidebar-bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+  animation: panel-slide-in-right 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes panel-slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.diff-viewer__resize {
+  width: 3px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 150ms;
+  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+}
+
+.diff-viewer__resize:hover {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.diff-viewer__inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.diff-viewer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.diff-viewer__title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-viewer__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.diff-viewer__content {
+  flex: 1;
+  overflow: auto;
+}
+
+.diff-viewer__labels {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.diff-viewer__label {
+  flex: 1;
+  padding: 4px 14px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.diff-viewer__label--old {
+  color: var(--danger);
+  border-right: 1px solid var(--border);
+}
+
+.diff-viewer__label--new {
+  color: var(--green);
+}
+
+.diff-viewer__split {
+  display: flex;
+  min-height: 100%;
+}
+
+.diff-viewer__pane {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.7;
+  overflow-x: auto;
+  border-right: 1px solid var(--border);
+}
+
+.diff-viewer__pane:last-child {
+  border-right: none;
+}
+
+.diff-line {
+  display: flex;
+  padding: 0 6px 0 0;
+  min-height: 1.7em;
+}
+
+.diff-line--add {
+  background: var(--green-dim);
+}
+
+.diff-line--del {
+  background: var(--danger-dim);
+}
+
+.diff-line--empty {
+  background: rgba(74, 79, 106, 0.04);
+}
+
+.diff-line__num {
+  display: inline-block;
+  width: 32px;
+  padding: 0 6px;
+  text-align: right;
+  color: var(--text-dim);
+  user-select: none;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  margin-right: 6px;
+  font-size: 9px;
+}
+
+.diff-line__text {
+  white-space: pre;
+  color: var(--text);
+}
+
+.diff-line--add .diff-line__text {
+  color: var(--green);
+}
+
+.diff-line--del .diff-line__text {
+  color: var(--danger);
+}
+
+/* ═══════════════════════ ONBOARDING ═══════════════════════ */
+
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  animation: onboarding-in 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes onboarding-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.onboarding__logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  box-shadow: 0 0 40px rgba(var(--accent-rgb), 0.2), 0 8px 32px var(--shadow-light);
+}
+
+.onboarding__title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-bright);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.onboarding__subtitle {
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.onboarding__cta {
+  margin-top: 12px;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 28px;
+  cursor: pointer;
+  font-family: var(--font-chrome);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 24px rgba(var(--accent-rgb), 0.2);
+}
+
+.onboarding__cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 32px rgba(var(--accent-rgb), 0.35);
+  filter: brightness(1.1);
+}
+
+.onboarding__hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.6;
+  margin: 0;
+}
+
+/* --- Error Boundary --- */
+
+.error-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px;
+  color: var(--text);
+  height: 100%;
+}
+
+.error-boundary__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-family: var(--font-chrome);
+}
+
+.error-boundary__message {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  max-width: 400px;
+  overflow: auto;
+  white-space: pre-wrap;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
