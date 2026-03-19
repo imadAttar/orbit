@@ -1,0 +1,108 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0e1219;
+  --sidebar-bg: #121821;
+  --surface: #161d28;
+  --border: #1e2632;
+  --border-bright: #2a3444;
+  --accent: #4d9de6;
+  --accent-rgb: 77, 157, 230;
+  --accent-glow: rgba(var(--accent-rgb), 0.15);
+  --accent-dim: rgba(var(--accent-rgb), 0.06);
+  --session-active: rgba(var(--accent-rgb), 0.07);
+  --code-bg: #0b0f15;
+  --text: #a0aab8;
+  --text-dim: #546070;
+  --text-bright: #e2e8f0;
+  --green: #7cc88e;
+  --green-dim: rgba(124, 200, 142, 0.1);
+  --yellow: #d4a64e;
+  --yellow-dim: rgba(212, 166, 78, 0.1);
+  --danger: #e06b74;
+  --danger-rgb: 224, 107, 116;
+  --danger-dim: rgba(224, 107, 116, 0.1);
+  --green-rgb: 124, 200, 142;
+  --yellow-rgb: 212, 166, 78;
+
+  /* Shadow/overlay tokens (theme-independent) */
+  --shadow-heavy: rgba(0, 0, 0, 0.6);
+  --shadow-medium: rgba(0, 0, 0, 0.5);
+  --shadow-light: rgba(0, 0, 0, 0.3);
+  --overlay-backdrop: rgba(0, 0, 0, 0.7);
+  --overlay-btn: rgba(0, 0, 0, 0.2);
+  --highlight-subtle: rgba(255, 255, 255, 0.03);
+
+  /* Spacing scale (4px base) */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* Border radius scale */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 14px;
+
+  /* Chrome font (sans-serif for UI) */
+  --font-chrome: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Terminal font (monospace) */
+  --font-mono: "JetBrains Mono", "Fira Mono", monospace;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font-chrome);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.app, .sidebar, .tab-bar, .status-bar, .terminal-area, .git-panel, .modal, .command-palette {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
+
+/* ═══════════════════════ SCROLLBAR ═══════════════════════ */
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

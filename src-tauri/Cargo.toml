@@ -1,0 +1,32 @@
+[package]
+name = "orbit"
+version = "0.1.1"
+edition = "2021"
+
+[lib]
+name = "orbit_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "orbit"
+path = "src/main.rs"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.8"
+regex = "1"
+notify = "6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
