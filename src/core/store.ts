@@ -62,7 +62,7 @@ async function setupBookmarkListeners() {
         );
         persist({ ...s, projects });
         useStore.setState({ projects });
-      } catch { /* ignore malformed payload */ }
+      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("store", `bookmark-pending parse error: ${err}`)); }
     });
 
     await listen<string>("bookmark-scores", (payload) => {
@@ -85,7 +85,7 @@ async function setupBookmarkListeners() {
         );
         persist({ ...s, projects });
         useStore.setState({ projects });
-      } catch { /* ignore */ }
+      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("store", `bookmark-scores parse error: ${err}`)); }
     });
   } catch {
     // Not in Tauri — skip
@@ -118,8 +118,8 @@ async function scanAndImportSkills(projectDir: string) {
     );
     persist({ ...s, projects });
     useStore.setState({ projects });
-  } catch {
-    // scan_project_skills not available or project has no skills
+  } catch (err) {
+    import("../lib/logger").then(({ logger }) => logger.warn("store", `skill scan failed: ${err}`));
   }
 }
 

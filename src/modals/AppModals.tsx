@@ -19,7 +19,7 @@ export function StatuslineModal({ onClose }: { onClose: () => void }) {
         <div className="modal__actions">
           <button className="modal__btn--secondary" onClick={dismiss}>{t("statusline.decline")}</button>
           <button className="modal__btn--primary" onClick={async () => {
-            try { await statusline.create(); trackEvent("statusline_created"); } catch { /* ignore */ }
+            try { await statusline.create(); trackEvent("statusline_created"); } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("statusline", `creation failed: ${err}`)); }
             dismiss();
           }}>{t("statusline.install")}</button>
         </div>

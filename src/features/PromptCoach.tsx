@@ -154,7 +154,8 @@ export default function PromptCoach({ onSend, onClose }: Props) {
         }
       }, 1500);
       pollRef.current = poll;
-    } catch {
+    } catch (err) {
+      import("../lib/logger").then(({ logger }) => logger.error("coach", `validation failed: ${err}`));
       setValidating(false);
     }
   }, [spawned, validating, onSend, onClose, t]);

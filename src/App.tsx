@@ -126,7 +126,10 @@ export default function App() {
     if (existing) store.setActiveSession(existing.id);
     for (let attempt = 0; attempt < 10; attempt++) {
       try { await pty.write(targetSid, command + "\r"); break; }
-      catch { await new Promise((r) => setTimeout(r, 300)); }
+      catch (err) {
+        if (attempt === 9) import("./lib/logger").then(({ logger }) => logger.warn("app", `skill session write failed after 10 retries: ${err}`));
+        else await new Promise((r) => setTimeout(r, 300));
+      }
     }
     trackEvent("skill_session_opened", { skill: command });
   }, []);

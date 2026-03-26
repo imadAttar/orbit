@@ -22,7 +22,7 @@ export function useScrollback(
       try {
         const data = serializeRef.current.serialize();
         scrollback.save(sessionId, data);
-      } catch { /* ignore */ }
+      } catch (err) { import("../../../lib/logger").then(({ logger }) => logger.warn("scrollback", `serialize error: ${err}`)); }
     }
   };
 

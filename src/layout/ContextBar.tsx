@@ -27,7 +27,7 @@ export default function ContextBar() {
         if (parsed && typeof parsed.context_pct === "number" && parsed.context_pct >= 0 && parsed.context_pct <= 100) {
           setData(parsed);
         }
-      } catch { /* malformed */ }
+      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("contextbar", `statusline parse error: ${err}`)); }
     };
 
     // Primary: event-driven via Rust file watcher

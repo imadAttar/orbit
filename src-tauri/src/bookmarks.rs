@@ -720,7 +720,10 @@ fn handle_score_request(app: &tauri::AppHandle, orbit_dir: &Path, raw_input: &st
 
     let hook_data: HookInput = match serde_json::from_str(raw_input) {
         Ok(d) => d,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("[bookmarks] Failed to parse hook input: {e}");
+            return;
+        }
     };
 
     // Load bookmarks from data.json
