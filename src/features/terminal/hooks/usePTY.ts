@@ -215,11 +215,16 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         unlistenRef.current = unlisten;
 
         // Forward xterm input to PTY
+        let lastPromptTrack = 0;
         term.onData((data) => {
           pty.write(sid, data).catch(() => {});
-          // Track Enter key as prompt submission (0x0d = carriage return)
+          // Track Enter key — throttle to max 1 event per 2s to avoid noise from vim/less/confirmations
           if (data === "\r" || data === "\n") {
-            trackEvent("prompt_sent");
+            const now = Date.now();
+            if (now - lastPromptTrack > 2000) {
+              lastPromptTrack = now;
+              trackEvent("prompt_sent");
+            }
           }
         });
 
