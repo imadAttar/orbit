@@ -82,7 +82,7 @@ export function useSessionStatePoller(
               if (s) { name = `${p.name} — ${s.name}`; break; }
             }
             terminal.notifyDone(name);
-            trackEvent("session_completed_background");
+            trackEvent("session_completed_background", { cost: store.sessionCosts[matchedSid] ?? 0, changedFiles: (data.changed_files?.length ?? 0) });
           }
           triggerGitCheck(projectDir);
         }

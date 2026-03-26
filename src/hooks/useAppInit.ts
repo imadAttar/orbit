@@ -62,4 +62,22 @@ export function useAppInit(dispatch: (action: any) => void) {
       unlisten?.();
     };
   }, []);
+
+  // Track active usage time and session duration
+  useEffect(() => {
+    const startTime = Date.now();
+    const onFocus = () => trackEvent("window_focused");
+    const onBlur = () => trackEvent("window_blurred", { activeMs: Date.now() - startTime });
+    const onBeforeUnload = () => {
+      trackEvent("app_closed", { sessionDurationMs: Date.now() - startTime });
+    };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, []);
 }

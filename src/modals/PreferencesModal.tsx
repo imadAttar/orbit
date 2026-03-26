@@ -66,6 +66,10 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
     setLanguage(prefs.language);
     setDefaultMode(prefs.defaultMode);
     setAnalyticsEnabled(prefs.analytics);
+    if (prefs.theme !== settings.theme) trackEvent("theme_changed", { from: settings.theme, to: prefs.theme });
+    if (prefs.fontSize !== settings.fontSize) trackEvent("font_size_changed", { from: settings.fontSize, to: prefs.fontSize });
+    if (prefs.language !== settings.language) trackEvent("language_changed", { from: settings.language, to: prefs.language });
+    if (prefs.defaultMode !== settings.defaultMode) trackEvent("default_mode_changed", { from: settings.defaultMode, to: prefs.defaultMode });
     trackEvent("preferences_saved", { theme: prefs.theme, fontSize: prefs.fontSize, terminal: prefs.terminal, language: prefs.language, editor: useStore.getState().settings.editor, defaultMode: prefs.defaultMode });
     onClose();
   };

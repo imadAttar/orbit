@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { Project, Session } from "../core/types";
+import { trackEvent } from "../lib/analytics";
 import { THEMES } from "../lib/themes";
 import { useStore } from "../core/store";
 import { useT } from "../i18n/i18n";
@@ -57,7 +58,7 @@ export default memo(function StatusBar({ activeProject, activeSession, activeCos
       {gitPending && (
         <button
           className="status-bar__git-btn status-bar__git-btn--pulse"
-          onClick={() => setShowGitPanel(true)}
+          onClick={() => { setShowGitPanel(true); trackEvent("git_panel_opened", { files: gitFiles.length }); }}
           title={t("git.pendingTooltip", { count: gitFiles.length })}
         >
           {t("git.pendingLabel", { count: gitFiles.length })}

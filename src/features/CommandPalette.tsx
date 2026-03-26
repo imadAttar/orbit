@@ -88,7 +88,7 @@ export default function CommandPalette({ onClose, onSelectPrompt }: Props) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={() => { trackEvent("command_palette_dismissed"); onClose(); }}>
       <div className="command-palette" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <input
           ref={inputRef}

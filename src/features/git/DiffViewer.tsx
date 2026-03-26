@@ -155,7 +155,7 @@ export default function DiffViewer() {
             <button className="modal__btn--danger" onClick={() => { setShowDiffViewer(false); trackEvent("diff_rejected"); }}>
               {t("diff.reject")}
             </button>
-            <button className="search-bar__btn" onClick={() => setShowDiffViewer(false)} title={t("common.close")}>
+            <button className="search-bar__btn" onClick={() => { setShowDiffViewer(false); trackEvent("diff_closed"); }} title={t("common.close")}>
               &#x2715;
             </button>
           </div>

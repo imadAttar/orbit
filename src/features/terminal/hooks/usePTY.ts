@@ -217,6 +217,10 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         // Forward xterm input to PTY
         term.onData((data) => {
           pty.write(sid, data).catch(() => {});
+          // Track Enter key as prompt submission (0x0d = carriage return)
+          if (data === "\r" || data === "\n") {
+            trackEvent("prompt_sent");
+          }
         });
 
         // Prompt navigation — intercept Cmd+Up/Down before xterm
