@@ -475,6 +475,42 @@ pub fn write_orbit_file(name: String, data: String) -> Result<(), String> {
         .map_err(|e| format!("Impossible d'ecrire {} : {e}", path.display()))
 }
 
+/// Collect recent logs and system info for crash reporting.
+/// Returns a pre-formatted report string safe to include in a GitHub issue.
+#[tauri::command]
+pub fn collect_crash_report(error_message: String) -> Result<String, String> {
+    let home = super::pty::home_dir();
+    let log_path = std::path::Path::new(&home).join(".orbit").join("logs").join("orbit.log");
+
+    // Read last 100 lines of log
+    let recent_logs = if let Ok(content) = std::fs::read_to_string(&log_path) {
+        let lines: Vec<&str> = content.lines().collect();
+        let start = if lines.len() > 100 { lines.len() - 100 } else { 0 };
+        lines[start..].join("\n")
+    } else {
+        "(logs unavailable)".to_string()
+    };
+
+    let report = format!(
+        "## Crash Report\n\n\
+         **Error:** {}\n\
+         **OS:** {} {}\n\
+         **Arch:** {}\n\
+         **App version:** {}\n\n\
+         <details>\n<summary>Recent logs (last 100 lines)</summary>\n\n\
+         ```\n{}\n```\n\n\
+         </details>",
+        error_message,
+        std::env::consts::OS,
+        std::env::consts::FAMILY,
+        std::env::consts::ARCH,
+        env!("CARGO_PKG_VERSION"),
+        recent_logs,
+    );
+
+    Ok(report)
+}
+
 /// Log a message from the frontend. PRIVACY: never log prompt content or user input.
 #[tauri::command]
 pub fn log_frontend(level: String, target: String, message: String) {

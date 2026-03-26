@@ -133,6 +133,7 @@ pub fn run() {
             terminal::create_directory,
             terminal::read_orbit_file,
             terminal::write_orbit_file,
+            terminal::collect_crash_report,
             terminal::log_frontend,
             bookmarks::scan_project_skills,
             bookmarks::score_bookmarks,

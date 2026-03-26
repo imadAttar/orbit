@@ -175,6 +175,9 @@
   "input.remove": "Retirer",
   "error.unexpected": "Erreur inattendue",
   "error.unknown": "Erreur inconnue",
+  "error.sendReport": "Envoyer le rapport",
+  "error.sending": "Envoi...",
+  "error.sent": "Rapport envoye",
   "statusbar.split": "Split",
   "contextbar.label": "Contexte",
   "terminal.error": "Erreur : {message}"
