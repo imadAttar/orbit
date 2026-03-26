@@ -86,7 +86,7 @@ export function useSessionStatePoller(
           }
           triggerGitCheck(projectDir);
         }
-      } catch { /* malformed payload */ }
+      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("poller", `session state parse error: ${err}`)); }
     };
 
     let unlisten: (() => void) | null = null;

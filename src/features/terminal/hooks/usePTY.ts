@@ -145,7 +145,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
           try {
             const saved = await scrollback.load(sid);
             if (saved) term.write(saved);
-          } catch { /* no scrollback yet */ }
+          } catch (err) { import("../../../lib/logger").then(({ logger }) => logger.warn("pty", `scrollback restore failed: ${err}`)); }
         } else {
           scrollback.clear(sid);
         }

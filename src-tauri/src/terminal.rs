@@ -280,7 +280,9 @@ pub fn save_scrollback(session_id: String, data: String) -> Result<(), String> {
     validate_session_id(&session_id)?;
     let home = super::pty::home_dir();
     let dir = std::path::Path::new(&home).join(".claude-ide").join("scrollback");
-    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[scrollback] Failed to create directory {}: {e}", dir.display());
+    }
     let path = dir.join(format!("{session_id}.txt"));
     // Truncate to last MAX_SCROLLBACK_BYTES to avoid filling disk
     let truncated = if data.len() > MAX_SCROLLBACK_BYTES {
@@ -465,7 +467,9 @@ pub fn write_orbit_file(name: String, data: String) -> Result<(), String> {
     validate_filename(&name)?;
     let home = super::pty::home_dir();
     let dir = std::path::Path::new(&home).join(".orbit");
-    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[orbit] Failed to create directory {}: {e}", dir.display());
+    }
     let path = dir.join(&name);
     std::fs::write(&path, data.as_bytes())
         .map_err(|e| format!("Impossible d'ecrire {} : {e}", path.display()))

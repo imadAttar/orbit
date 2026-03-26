@@ -44,7 +44,8 @@ export function useTerminalRestore({
         } else {
           dp({ type: "setRestore", value: "fresh" });
         }
-      } catch {
+      } catch (err) {
+        import("../../../lib/logger").then(({ logger }) => logger.warn("restore", `scrollback check failed: ${err}`));
         dp({ type: "setRestore", value: "fresh" });
       }
     })();

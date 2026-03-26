@@ -27,7 +27,9 @@ pub fn create_statusline() -> Result<(), String> {
         return Ok(());
     }
     if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("[statusline] Failed to create directory: {e}");
+        }
     }
     let script = include_str!("../resources/statusline.sh");
     std::fs::write(&path, script).map_err(|e| format!("Failed to write statusline: {}", e))?;

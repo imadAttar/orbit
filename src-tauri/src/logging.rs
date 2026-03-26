@@ -10,7 +10,9 @@ use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberI
 pub fn init() {
     let home = super::pty::home_dir();
     let log_dir = std::path::Path::new(&home).join(".orbit").join("logs");
-    let _ = std::fs::create_dir_all(&log_dir);
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!("[logging] Failed to create log directory: {e}");
+    }
 
     // Daily rotation, keep max 5 files
     let file_appender = rolling::daily(&log_dir, "orbit.log");
