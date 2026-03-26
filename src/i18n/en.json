@@ -60,6 +60,9 @@
   "prefs.modeNormal": "Normal",
   "prefs.modeYolo": "Yolo",
   "prefs.language": "Language",
+  "prefs.sectionAppearance": "Appearance",
+  "prefs.sectionSession": "Session",
+  "prefs.sectionPrivacy": "Privacy",
 
   "shortcuts.sessions": "Sessions",
   "shortcuts.newSession": "New session",
