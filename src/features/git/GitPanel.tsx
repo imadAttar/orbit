@@ -92,7 +92,7 @@ export default function GitPanel() {
     <div className="git-panel">
       <div className="git-panel__header">
         <span className="git-panel__title">{t("git.header", { count: gitFiles.length })}</span>
-        <button className="search-bar__btn" onClick={() => setShowGitPanel(false)} title={t("common.close")}>
+        <button className="search-bar__btn" onClick={() => { setShowGitPanel(false); trackEvent("git_panel_closed"); }} title={t("common.close")}>
           &#x2715;
         </button>
       </div>

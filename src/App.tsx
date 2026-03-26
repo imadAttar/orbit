@@ -154,12 +154,12 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       handleKeyboardShortcut(e, {
-        showNewProject: () => dispatch({ type: "set", field: "showNewProject", value: true }),
-        confirmDeleteSession: (sid) => dispatch({ type: "set", field: "confirmDeleteSession", value: sid }),
-        toggleSearch: () => { trackEvent("search_opened"); dispatch({ type: "toggleSearch" }); },
-        showPreferences: () => dispatch({ type: "set", field: "showPreferences", value: true }),
-        toggleCommandPalette: () => dispatch({ type: "toggleCommandPalette" }),
-        openExternalTerminal: (terminal, dir) => openExternalTerminal(terminal as TerminalPref, dir),
+        showNewProject: () => { trackEvent("shortcut_used", { key: "new_project" }); dispatch({ type: "set", field: "showNewProject", value: true }); },
+        confirmDeleteSession: (sid) => { trackEvent("shortcut_used", { key: "close_session" }); dispatch({ type: "set", field: "confirmDeleteSession", value: sid }); },
+        toggleSearch: () => { trackEvent("shortcut_used", { key: "search" }); dispatch({ type: "toggleSearch" }); },
+        showPreferences: () => { trackEvent("shortcut_used", { key: "preferences" }); dispatch({ type: "set", field: "showPreferences", value: true }); },
+        toggleCommandPalette: () => { trackEvent("shortcut_used", { key: "command_palette" }); dispatch({ type: "toggleCommandPalette" }); },
+        openExternalTerminal: (terminal, dir) => { trackEvent("shortcut_used", { key: "external_terminal" }); openExternalTerminal(terminal as TerminalPref, dir); },
       });
     };
     window.addEventListener("keydown", handler);
@@ -169,6 +169,7 @@ export default function App() {
   if (!loaded) return <div className="app" style={centeredAppStyle}><span style={dimTextStyle}>{t("app.loading")}</span></div>;
 
   if (!activeProject || !activeSession) {
+    trackEvent("onboarding_shown");
     return (
       <div className="app" style={centeredAppStyle}>
         <div className="onboarding">
