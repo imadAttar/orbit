@@ -460,3 +460,8 @@
   border-radius: 6px;
 }
 
+.error-boundary__actions {
+  display: flex;
+  gap: 8px;
+}
+

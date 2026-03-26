@@ -143,6 +143,9 @@ export const orbit = {
 
   saveTempImage: (data: string, extension: string) =>
     call<string>("save_temp_image", { data, extension }),
+
+  collectCrashReport: (errorMessage: string) =>
+    call<string>("collect_crash_report", { errorMessage }),
 };
 
 // === Bookmarks & Skills ===
