@@ -11,7 +11,6 @@ export interface KeyboardCallbacks {
   toggleSearch: () => void;
   showPreferences: () => void;
   toggleCommandPalette: () => void;
-  openExternalTerminal: (terminal: string, dir: string) => void;
 }
 
 export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCallbacks) {
@@ -34,13 +33,6 @@ export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCall
   } else if (mod && e.key === "f") {
     e.preventDefault();
     callbacks.toggleSearch();
-  } else if (mod && e.key === "t") {
-    e.preventDefault();
-    const proj = state.projects.find((p) => p.id === state.activePid);
-    if (proj) {
-      callbacks.openExternalTerminal(state.settings.terminal, proj.dir);
-      trackEvent("external_terminal_opened");
-    }
   } else if (mod && e.key === ",") {
     e.preventDefault();
     callbacks.showPreferences();

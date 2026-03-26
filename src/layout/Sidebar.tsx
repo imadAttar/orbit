@@ -1,21 +1,12 @@
 import { useState, useMemo } from "react";
-import type { Project, Session } from "../core/types";
-import { useStore } from "../core/store";
+import type { Session } from "../core/types";
+import { useStore, selectActiveProject } from "../core/store";
 import { trackEvent } from "../lib/analytics";
 import { useT } from "../i18n/i18n";
 import InlineRename from "../shared/InlineRename";
 import { useBookmarkFilter } from "../hooks/useBookmarkFilter";
 
 interface Props {
-  activeProject: Project;
-  activeSid: string;
-  notifiedSessions: Record<string, boolean>;
-  sessionCosts: Record<string, number>;
-  sidebarWidth: number;
-  onSelectSession: (sid: string) => void;
-  onClearNotification: (sid: string) => void;
-  onRenameSession: (sid: string, name: string) => void;
-  onAddSession: () => void;
   onContextMenu: (sid: string, x: number, y: number) => void;
   onOpenSkillSession: (name: string, command: string) => void;
   onOpenPromptCoach: () => void;
@@ -23,21 +14,25 @@ interface Props {
 }
 
 export default function Sidebar({
-  activeProject,
-  activeSid,
-  notifiedSessions,
-  sessionCosts,
-  sidebarWidth,
-  onSelectSession,
-  onClearNotification,
-  onRenameSession,
-  onAddSession,
   onContextMenu,
   onOpenSkillSession,
   onOpenPromptCoach,
   onSendToSession,
 }: Props) {
   const t = useT();
+
+  // Read directly from store instead of props
+  const activeProject = useStore(selectActiveProject);
+  const activeSid = useStore((s) => s.activeSid);
+  const notifiedSessions = useStore((s) => s.notifiedSessions);
+  const sessionCosts = useStore((s) => s.sessionCosts);
+  const sidebarWidth = useStore((s) => s.settings.sidebarWidth);
+  const setActiveSession = useStore((s) => s.setActiveSession);
+  const clearNotification = useStore((s) => s.clearNotification);
+  const renameSession = useStore((s) => s.renameSession);
+  const addSession = useStore((s) => s.addSession);
+  const removeSession = useStore((s) => s.removeSession);
+
   const { bookmarks, scores, maxScore } = useBookmarkFilter();
   const [renamingSession, setRenamingSession] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -55,6 +50,8 @@ export default function Sidebar({
     }
     return map;
   }, [bookmarks, scores, maxScore]);
+
+  if (!activeProject) return null;
 
   return (
     <div className="sidebar" style={sidebarStyle}>
@@ -79,16 +76,16 @@ export default function Sidebar({
                 trackEvent("session_reordered");
               }
             }}
-            onClick={() => { onSelectSession(s.id); onClearNotification(s.id); trackEvent("session_switched"); }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectSession(s.id); onClearNotification(s.id); } }}
+            onClick={() => { setActiveSession(s.id); clearNotification(s.id); trackEvent("session_switched"); }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveSession(s.id); clearNotification(s.id); } }}
             onDoubleClick={() => setRenamingSession(s.id)}
             onContextMenu={(e) => { e.preventDefault(); onContextMenu(s.id, e.clientX, e.clientY); }}
           >
-            <div className={`session-item__dot ${notifiedSessions[s.id] ? "session-item__dot--notified" : "session-item__dot--has-messages"}`} />
+            <div className={`session-item__dot ${notifiedSessions[s.id] ? "session-item__dot--notified" : s.type === "terminal" ? "session-item__dot--terminal" : "session-item__dot--has-messages"}`} />
             {renamingSession === s.id ? (
               <InlineRename
                 value={s.name}
-                onConfirm={(v) => { onRenameSession(s.id, v); setRenamingSession(null); trackEvent("session_renamed"); }}
+                onConfirm={(v) => { renameSession(s.id, v); setRenamingSession(null); trackEvent("session_renamed"); }}
                 onCancel={() => setRenamingSession(null)}
               />
             ) : (
@@ -102,14 +99,30 @@ export default function Sidebar({
                     <span className="session-item__cost">${sessionCosts[s.id].toFixed(2)}</span>
                   )}
                   {idx < 9 && <span className="session-item__index">{idx + 1}</span>}
+                  {activeProject.sessions.length > 1 && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="session-item__close"
+                      onClick={(e) => { e.stopPropagation(); removeSession(s.id); trackEvent("session_closed"); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); removeSession(s.id); } }}
+                    >
+                      &times;
+                    </span>
+                  )}
                 </div>
               </>
             )}
           </div>
         ))}
-        <button className="sidebar__add-btn" onClick={onAddSession} aria-label={t("session.addSession")}>
-          {t("session.addSession")}
-        </button>
+        <div className="sidebar__add-row">
+          <button className="sidebar__add-btn sidebar__add-btn--claude" onClick={() => { addSession(); trackEvent("session_created"); }} aria-label={t("session.addClaudeSession")}>
+            {t("session.addClaudeSession")}
+          </button>
+          <button className="sidebar__add-btn sidebar__add-btn--terminal" onClick={() => { addSession(undefined, "terminal"); trackEvent("terminal_session_created"); }} aria-label={t("session.addTerminalSession")}>
+            {t("session.addTerminalSession")}
+          </button>
+        </div>
       </div>
       {bookmarks.length > 0 && (
         <div className="sidebar__skills sidebar__skills--project">

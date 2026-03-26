@@ -1,7 +1,7 @@
 import { useState, memo } from "react";
 import type { Project } from "../core/types";
 import { useT } from "../i18n/i18n";
-import { modLabel, modSymbol } from "../lib/platform";
+import { modLabel } from "../lib/platform";
 import { trackEvent } from "../lib/analytics";
 import InlineRename from "../shared/InlineRename";
 
@@ -15,7 +15,6 @@ interface Props {
   onClearNotification: (sid: string) => void;
   onNewProject: () => void;
   onCommandPalette: () => void;
-  onOpenTerminal: () => void;
 }
 
 export default memo(function TabBar({
@@ -28,7 +27,6 @@ export default memo(function TabBar({
   onClearNotification,
   onNewProject,
   onCommandPalette,
-  onOpenTerminal,
 }: Props) {
   const t = useT();
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
@@ -83,7 +81,6 @@ export default memo(function TabBar({
       <button className="tab-bar__btn" title={`${t("tabbar.newProject")} (${modLabel}+Shift+N)`} aria-label={t("tabbar.newProject")} onClick={onNewProject}>+</button>
       <div className="tab-bar__spacer" />
       <button className="tab-bar__btn" title={`${t("tabbar.bookmarks")} (${modLabel}+P)`} aria-label={t("tabbar.bookmarks")} onClick={onCommandPalette}>&#x2606;</button>
-      <button className="tab-bar__btn" title={`${t("tabbar.openTerminal")} (${modLabel}+T)`} aria-label={t("tabbar.openTerminal")} onClick={onOpenTerminal}>{modSymbol}T</button>
     </div>
   );
 });

@@ -75,7 +75,6 @@ function createTestCallbacks(): KeyboardCallbacks {
     toggleSearch: () => window.dispatchEvent(new CustomEvent("test:toggleSearch")),
     showPreferences: () => window.dispatchEvent(new CustomEvent("test:showPreferences")),
     toggleCommandPalette: () => window.dispatchEvent(new CustomEvent("test:toggleCommandPalette")),
-    openExternalTerminal: (terminal, dir) => mockInvoke("open_terminal", { terminal, dir }),
   };
 }
 
@@ -200,18 +199,6 @@ describe("App keyboard shortcuts", () => {
       fire("f", { metaKey: true });
       expect(spy).toHaveBeenCalledTimes(1);
       window.removeEventListener("test:toggleSearch", spy);
-    });
-  });
-
-  // --- Cmd+T: open external terminal ---
-
-  describe("Cmd+T", () => {
-    it("should invoke open_terminal with project dir and terminal pref", () => {
-      fire("t", { metaKey: true });
-      expect(mockInvoke).toHaveBeenCalledWith("open_terminal", {
-        terminal: "iterm2",
-        dir: "/tmp/test",
-      });
     });
   });
 

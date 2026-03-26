@@ -1,6 +1,9 @@
+export type SessionType = "claude" | "terminal";
+
 export type Session = {
   id: string;
   name: string;
+  type?: SessionType; // "claude" (default) or "terminal" (plain shell, no Claude)
   claudeSessionId?: string; // Claude Code CLI session UUID for --resume
   dangerousMode?: boolean; // true = yolo mode (skip all permission prompts)
 };

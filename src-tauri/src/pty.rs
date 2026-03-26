@@ -51,8 +51,9 @@ pub fn spawn_pty(
     resume_mode: Option<bool>,
     session_name: Option<String>,
     dangerous_mode: Option<bool>,
+    shell_only: Option<bool>,
 ) -> Result<(), String> {
-    tracing::info!(session_id = %session_id, project_dir = %project_dir, cols, rows, "Spawning PTY");
+    tracing::info!(session_id = %session_id, project_dir = %project_dir, cols, rows, shell_only = shell_only.unwrap_or(false), "Spawning PTY");
     if !std::path::Path::new(&project_dir).is_dir() {
         return Err(format!("Repertoire projet introuvable : {project_dir}"));
     }
@@ -68,28 +69,38 @@ pub fn spawn_pty(
         })
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    let claude_bin = crate::claude::resolve_claude_path()
-        .ok_or_else(|| "Unable to spawn claude because it doesn't exist on the filesystem and was not found in PATH".to_string())?;
+    // Shell-only mode: spawn user's default shell instead of Claude
+    let mut cmd = if shell_only.unwrap_or(false) {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| {
+            if cfg!(target_os = "windows") { "cmd.exe".to_string() } else { "/bin/zsh".to_string() }
+        });
+        CommandBuilder::new(shell)
+    } else {
+        let claude_bin = crate::claude::resolve_claude_path()
+            .ok_or_else(|| "Unable to spawn claude because it doesn't exist on the filesystem and was not found in PATH".to_string())?;
 
-    let mut cmd = CommandBuilder::new(&claude_bin);
+        let mut c = CommandBuilder::new(&claude_bin);
 
-    if let Some(ref cid) = claude_session_id {
-        if resume_mode.unwrap_or(true) {
-            cmd.arg("--resume");
-        } else {
-            cmd.arg("--session-id");
+        if let Some(ref cid) = claude_session_id {
+            if resume_mode.unwrap_or(true) {
+                c.arg("--resume");
+            } else {
+                c.arg("--session-id");
+            }
+            c.arg(cid);
         }
-        cmd.arg(cid);
-    }
 
-    if let Some(ref name) = session_name {
-        cmd.arg("--name");
-        cmd.arg(name);
-    }
+        if let Some(ref name) = session_name {
+            c.arg("--name");
+            c.arg(name);
+        }
 
-    if dangerous_mode.unwrap_or(false) {
-        cmd.arg("--dangerously-skip-permissions");
-    }
+        if dangerous_mode.unwrap_or(false) {
+            c.arg("--dangerously-skip-permissions");
+        }
+
+        c
+    };
 
     cmd.cwd(&project_dir);
 

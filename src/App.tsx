@@ -1,7 +1,6 @@
 import { useReducer, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
-import type { TerminalPref } from "./core/types";
 import { useStore } from "./core/store";
-import { pty, terminal } from "./core/api";
+import { pty } from "./core/api";
 import { trackEvent } from "./lib/analytics";
 import { useT } from "./i18n/i18n";
 import TerminalView from "./features/terminal/Terminal";
@@ -27,14 +26,6 @@ const NewProjectModal = lazy(() => import("./modals/NewProjectModal"));
 const PreferencesModal = lazy(() => import("./modals/PreferencesModal"));
 
 // --- Helpers ---
-
-async function openExternalTerminal(t: TerminalPref, dir: string) {
-  try {
-    await terminal.openExternal(t, dir);
-  } catch (err) {
-    import("./lib/logger").then(({ logger }) => logger.error("app", `Failed to open terminal: ${err}`));
-  }
-}
 
 // --- UI State ---
 
@@ -82,10 +73,7 @@ export default function App() {
   const sessionCosts = useStore((s) => s.sessionCosts);
   const splitLayout = useStore((s) => s.splitLayout);
   const setActiveProject = useStore((s) => s.setActiveProject);
-  const setActiveSession = useStore((s) => s.setActiveSession);
-  const addSession = useStore((s) => s.addSession);
   const removeSession = useStore((s) => s.removeSession);
-  const renameSession = useStore((s) => s.renameSession);
   const removeProject = useStore((s) => s.removeProject);
   const renameProject = useStore((s) => s.renameProject);
   const clearNotification = useStore((s) => s.clearNotification);
@@ -114,9 +102,6 @@ export default function App() {
     document.addEventListener("mouseup", onUp);
   }, [setSidebarWidth]);
 
-  const handleOpenTerminal = useCallback(() => {
-    if (activeProject) openExternalTerminal(settings.terminal, activeProject.dir);
-  }, [activeProject, settings.terminal]);
 
   const openSkillSession = useCallback(async (name: string, command: string) => {
     const store = useStore.getState();
@@ -159,7 +144,6 @@ export default function App() {
         toggleSearch: () => { trackEvent("shortcut_used", { key: "search" }); dispatch({ type: "toggleSearch" }); },
         showPreferences: () => { trackEvent("shortcut_used", { key: "preferences" }); dispatch({ type: "set", field: "showPreferences", value: true }); },
         toggleCommandPalette: () => { trackEvent("shortcut_used", { key: "command_palette" }); dispatch({ type: "toggleCommandPalette" }); },
-        openExternalTerminal: (terminal, dir) => { trackEvent("shortcut_used", { key: "external_terminal" }); openExternalTerminal(terminal as TerminalPref, dir); },
       });
     };
     window.addEventListener("keydown", handler);
@@ -191,12 +175,10 @@ export default function App() {
       <TabBar projects={projects} activePid={activePid} notifiedSessions={notifiedSessions}
         onSelectProject={(pid) => setActiveProject(pid)} onRenameProject={renameProject} onRemoveProject={removeProject}
         onClearNotification={clearNotification} onNewProject={() => dispatch({ type: "set", field: "showNewProject", value: true })}
-        onCommandPalette={() => dispatch({ type: "set", field: "showCommandPalette", value: true })} onOpenTerminal={handleOpenTerminal} />
+        onCommandPalette={() => dispatch({ type: "set", field: "showCommandPalette", value: true })} />
 
       <div className="main">
-        <Sidebar activeProject={activeProject} activeSid={activeSid} notifiedSessions={notifiedSessions}
-          sessionCosts={sessionCosts} sidebarWidth={settings.sidebarWidth} onSelectSession={setActiveSession}
-          onClearNotification={clearNotification} onRenameSession={renameSession} onAddSession={() => addSession()}
+        <Sidebar
           onContextMenu={(sid, x, y) => dispatch({ type: "set", field: "contextMenu", value: { sid, x, y } })}
           onOpenSkillSession={openSkillSession} onOpenPromptCoach={openPromptCoach} onSendToSession={sendPromptToActiveSession} />
         <div className="resize-handle" role="separator" aria-orientation="vertical" onMouseDown={handleResizeStart} />
@@ -221,7 +203,8 @@ export default function App() {
                         active={isThisActive}
                         visible={isThisActive}
                         searchOpen={isThisActive && ui.searchOpen}
-                        onSearchClose={() => dispatch({ type: "set", field: "searchOpen", value: false })} />
+                        onSearchClose={() => dispatch({ type: "set", field: "searchOpen", value: false })}
+                        sessionType={s.type ?? "claude"} />
                     );
                   })
                 )}

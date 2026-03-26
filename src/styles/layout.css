@@ -208,6 +208,11 @@
   background: var(--text-dim);
 }
 
+.session-item__dot--terminal {
+  background: var(--yellow, #f9e2af);
+  box-shadow: 0 0 4px rgba(249, 226, 175, 0.3);
+}
+
 .session-item__dot--notified {
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent);
@@ -255,6 +260,25 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.session-item__close {
+  font-size: 14px;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 100ms, color 100ms;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.session-item:hover .session-item__close {
+  opacity: 0.6;
+}
+
+.session-item__close:hover {
+  opacity: 1 !important;
+  color: var(--red, #f38ba8);
 }
 
 .session-item__cost {
@@ -508,25 +532,37 @@
   overflow: hidden;
 }
 
+.sidebar__add-row {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px 8px;
+}
+
 .sidebar__add-btn {
-  width: calc(100% - 16px);
-  margin: 4px 8px 8px;
-  padding: 8px;
+  flex: 1;
+  padding: 6px 8px;
   border: 1px dashed var(--border-bright);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
   font-family: var(--font-chrome);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
-  border-radius: 8px;
+  border-radius: 6px;
   transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   letter-spacing: 0.02em;
 }
 
-.sidebar__add-btn:hover {
+.sidebar__add-btn--claude:hover {
   background: var(--accent-dim);
   border-color: var(--accent);
   border-style: solid;
   color: var(--accent);
+}
+
+.sidebar__add-btn--terminal:hover {
+  background: rgba(249, 226, 175, 0.1);
+  border-color: var(--yellow, #f9e2af);
+  border-style: solid;
+  color: var(--yellow, #f9e2af);
 }

@@ -135,8 +135,8 @@ function uid(): string {
   return crypto.randomUUID();
 }
 
-function makeSession(name: string): Session {
-  return { id: uid(), name };
+function makeSession(name: string, type?: import("./types").SessionType): Session {
+  return { id: uid(), name, type: type ?? "claude" };
 }
 
 function makeProject(name: string, dir: string): Project {
@@ -175,7 +175,7 @@ interface AppStore {
   removeProject: (pid: string) => void;
   setActiveProject: (pid: string) => void;
 
-  addSession: (name?: string) => void;
+  addSession: (name?: string, type?: import("./types").SessionType) => void;
   renameSession: (sid: string, name: string) => void;
   removeSession: (sid: string) => void;
   setActiveSession: (sid: string) => void;
@@ -379,12 +379,13 @@ export const useStore = create<AppStore>((set, get) => ({
     scanAndImportSkills(proj.dir);
   },
 
-  addSession: (name) =>
+  addSession: (name, type) =>
     set((s) => {
       const proj = s.projects.find((p) => p.id === s.activePid);
       if (!proj) return s;
       const count = proj.sessions.length + 1;
-      const session = makeSession(name || `session-${count}`);
+      const defaultName = type === "terminal" ? `terminal-${count}` : `session-${count}`;
+      const session = makeSession(name || defaultName, type);
       const projects = s.projects.map((p) =>
         p.id === s.activePid
           ? { ...p, sessions: [...p.sessions, session] }
