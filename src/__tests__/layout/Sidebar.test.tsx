@@ -23,26 +23,44 @@ vi.mock("../../i18n/i18n", () => ({
 }));
 
 import Sidebar from "../../layout/Sidebar";
-import type { Project } from "../../core/types";
+import { useStore } from "../../core/store";
+
+const sessions = [
+  { id: "s1", name: "Session 1" },
+  { id: "s2", name: "Session 2" },
+  { id: "s3", name: "Session 3" },
+];
+
+function setupStore(overrides: Record<string, unknown> = {}) {
+  useStore.setState({
+    projects: [{
+      id: "p1",
+      name: "Test Project",
+      dir: "/tmp/test",
+      sessions,
+    }],
+    activePid: "p1",
+    activeSid: "s1",
+    notifiedSessions: {},
+    sessionCosts: {},
+    settings: {
+      terminal: "default" as const,
+      editor: "vscode" as const,
+      theme: "orbit" as const,
+      fontSize: 11,
+      sidebarWidth: 220,
+      analytics: true,
+      statuslineAsked: false,
+      autoUpdate: true,
+      defaultMode: "normal" as const,
+      language: "fr" as const,
+    },
+    ...overrides,
+  });
+}
 
 describe("Sidebar", () => {
-  const sessions = [
-    { id: "s1", name: "Session 1" },
-    { id: "s2", name: "Session 2" },
-    { id: "s3", name: "Session 3" },
-  ];
-  const activeProject: Project = {
-    id: "p1",
-    name: "Test Project",
-    dir: "/tmp/test",
-    sessions,
-  };
-
   const handlers = {
-    onSelectSession: vi.fn<(sid: string) => void>(),
-    onClearNotification: vi.fn<(sid: string) => void>(),
-    onRenameSession: vi.fn<(sid: string, name: string) => void>(),
-    onAddSession: vi.fn<() => void>(),
     onContextMenu: vi.fn<(sid: string, x: number, y: number) => void>(),
     onOpenSkillSession: vi.fn<(name: string, command: string) => void>(),
     onOpenPromptCoach: vi.fn<() => void>(),
@@ -51,21 +69,12 @@ describe("Sidebar", () => {
 
   beforeEach(() => {
     cleanup();
+    setupStore();
     Object.values(handlers).forEach((fn) => fn.mockClear());
   });
 
-  const renderSidebar = (overrides: Record<string, unknown> = {}) =>
-    render(
-      <Sidebar
-        activeProject={activeProject}
-        activeSid="s1"
-        notifiedSessions={{}}
-        sessionCosts={{}}
-        sidebarWidth={220}
-        {...handlers}
-        {...overrides}
-      />,
-    );
+  const renderSidebar = () =>
+    render(<Sidebar {...handlers} />);
 
   it("renders session list", () => {
     const { container } = renderSidebar();
@@ -77,45 +86,40 @@ describe("Sidebar", () => {
   });
 
   it("marks active session", () => {
-    const { container } = renderSidebar({ activeSid: "s2" });
+    setupStore({ activeSid: "s2" });
+    const { container } = renderSidebar();
     const items = container.querySelectorAll(".session-item");
     expect(items[0]?.classList.contains("session-item--active")).toBe(false);
     expect(items[1]?.classList.contains("session-item--active")).toBe(true);
   });
 
-  it("click on session calls onSelectSession and onClearNotification", () => {
+  it("click on session updates store", () => {
     const { container } = renderSidebar();
     const items = container.querySelectorAll(".session-item");
     fireEvent.click(items[1]!);
-    expect(handlers.onSelectSession).toHaveBeenCalledWith("s2");
-    expect(handlers.onClearNotification).toHaveBeenCalledWith("s2");
+    expect(useStore.getState().activeSid).toBe("s2");
   });
 
   it("shows notification badge when session is notified", () => {
-    const { container } = renderSidebar({
-      notifiedSessions: { s2: true },
-    });
+    setupStore({ notifiedSessions: { s2: true } });
+    const { container } = renderSidebar();
     const items = container.querySelectorAll(".session-item");
-    // s2 should have the notified class
     expect(items[1]?.classList.contains("session-item--notified")).toBe(true);
-    // s2 should have a badge
     const badge = items[1]?.querySelector(".session-item__badge");
     expect(badge).toBeTruthy();
     expect(badge?.textContent).toBe("session.ready");
   });
 
   it("does not show notification badge for non-notified sessions", () => {
-    const { container } = renderSidebar({
-      notifiedSessions: { s2: true },
-    });
+    setupStore({ notifiedSessions: { s2: true } });
+    const { container } = renderSidebar();
     const items = container.querySelectorAll(".session-item");
     expect(items[0]?.querySelector(".session-item__badge")).toBeNull();
   });
 
   it("shows cost for session", () => {
-    const { container } = renderSidebar({
-      sessionCosts: { s1: 1.5, s3: 0.25 },
-    });
+    setupStore({ sessionCosts: { s1: 1.5, s3: 0.25 } });
+    const { container } = renderSidebar();
     const items = container.querySelectorAll(".session-item");
     const costS1 = items[0]?.querySelector(".session-item__cost");
     expect(costS1).toBeTruthy();
@@ -137,11 +141,12 @@ describe("Sidebar", () => {
     expect(indices[2]?.textContent).toBe("3");
   });
 
-  it("add session button calls onAddSession", () => {
+  it("add session button creates a new session", () => {
     const { container } = renderSidebar();
-    const addBtn = container.querySelector(".sidebar__add-btn") as HTMLElement;
+    const addBtn = container.querySelector(".sidebar__add-btn--claude") as HTMLElement;
     fireEvent.click(addBtn);
-    expect(handlers.onAddSession).toHaveBeenCalled();
+    const proj = useStore.getState().projects.find((p) => p.id === "p1");
+    expect(proj?.sessions.length).toBe(4);
   });
 
   it("renders skill buttons", () => {

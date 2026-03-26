@@ -34,6 +34,8 @@
 
   "session.sessions": "Sessions",
   "session.addSession": "+ session",
+  "session.addClaudeSession": "+ Claude",
+  "session.addTerminalSession": "+ Terminal",
   "session.delete": "Supprimer la session",
   "session.deleteConfirm": "Supprimer la session \u00ab{name}\u00bb ? Le process Claude sera arrete.",
   "session.rename": "Renommer",

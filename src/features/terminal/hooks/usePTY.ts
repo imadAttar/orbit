@@ -27,6 +27,7 @@ interface UsePTYOptions {
   jumpRef: React.RefObject<(dir: "prev" | "next") => void>;
   onSpawned: (spawned: boolean) => void;
   spawned: boolean;
+  sessionType?: "claude" | "terminal";
   t: ReturnType<typeof import("../../../i18n/i18n").useT>;
 }
 
@@ -49,8 +50,10 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
   const {
     sessionId, projectDir, containerRef, activated,
     restoreChoice, modeChoice, generation, isVisible,
-    jumpRef, onSpawned, spawned, t,
+    jumpRef, onSpawned, spawned, sessionType, t,
   } = opts;
+
+  const isTerminalSession = sessionType === "terminal";
 
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -166,30 +169,39 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
           }
         }
 
-        // For fresh sessions, generate a UUID upfront and pass it via --session-id
-        // so each tab gets its own isolated Claude session deterministically.
-        const isResume = shouldRestore && !!claudeSessionId;
-        const effectiveClaudeId = isResume
-          ? claudeSessionId!
-          : crypto.randomUUID();
+        if (isTerminalSession) {
+          // Plain shell — no Claude CLI
+          await pty.spawn({
+            sessionId: sid,
+            projectDir,
+            cols,
+            rows,
+            shellOnly: true,
+          });
+        } else {
+          // Claude session — generate or resume a Claude session ID
+          const isResume = shouldRestore && !!claudeSessionId;
+          const effectiveClaudeId = isResume
+            ? claudeSessionId!
+            : crypto.randomUUID();
 
-        await pty.spawn({
-          sessionId: sid,
-          projectDir,
-          cols,
-          rows,
-          claudeSessionId: effectiveClaudeId,
-          resumeMode: isResume,
-          sessionName: sessionName || null,
-          dangerousMode: modeChoice === "yolo",
-        });
+          await pty.spawn({
+            sessionId: sid,
+            projectDir,
+            cols,
+            rows,
+            claudeSessionId: effectiveClaudeId,
+            resumeMode: isResume,
+            sessionName: sessionName || null,
+            dangerousMode: modeChoice === "yolo",
+          });
 
-        // Store the Claude session ID immediately — no async detection needed
-        if (!isResume) {
-          useStore.getState().setClaudeSessionId(sid, effectiveClaudeId);
+          if (!isResume) {
+            useStore.getState().setClaudeSessionId(sid, effectiveClaudeId);
+          }
+
+          useStore.getState().setDangerousMode(sid, modeChoice === "yolo");
         }
-
-        useStore.getState().setDangerousMode(sid, modeChoice === "yolo");
 
         spawnedRef.current = true;
         onSpawned(true);

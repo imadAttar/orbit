@@ -45,6 +45,7 @@ export const pty = {
     resumeMode?: boolean;
     sessionName?: string | null;
     dangerousMode?: boolean;
+    shellOnly?: boolean;
   }) => call<void>("spawn_pty", args),
 
   write: (sessionId: string, data: string) =>

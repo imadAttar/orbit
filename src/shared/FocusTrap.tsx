@@ -57,5 +57,5 @@ export default function FocusTrap({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  return <div ref={containerRef}>{children}</div>;
+  return <div ref={containerRef} style={{ display: "contents" }}>{children}</div>;
 }

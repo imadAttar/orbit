@@ -51,9 +51,10 @@ interface Props {
   visible?: boolean;
   searchOpen: boolean;
   onSearchClose: () => void;
+  sessionType?: "claude" | "terminal";
 }
 
-export default function TerminalView({ sessionId, projectDir, active, visible, searchOpen, onSearchClose }: Props) {
+export default function TerminalView({ sessionId, projectDir, active, visible, searchOpen, onSearchClose, sessionType }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const t = useT();
   const [ts, dp] = useReducer(termReducer, INITIAL_TERM_STATE);
@@ -65,6 +66,8 @@ export default function TerminalView({ sessionId, projectDir, active, visible, s
   const ptyTermRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const { jumpToPrompt, jumpRef } = usePromptNav(ptyTermRef);
 
+  const isTerminalSession = sessionType === "terminal";
+
   // --- PTY lifecycle hook ---
   const ptyResult = usePTY({
     sessionId,
@@ -72,12 +75,13 @@ export default function TerminalView({ sessionId, projectDir, active, visible, s
     containerRef,
     activated: ts.activated,
     restoreChoice: ts.restoreChoice,
-    modeChoice: ts.modeChoice,
+    modeChoice: isTerminalSession ? "normal" : ts.modeChoice, // terminal sessions skip mode picker
     generation: ts.generation,
     isVisible: isVisible ?? false,
     jumpRef,
     onSpawned: (v) => dp({ type: "setSpawned", value: v }),
     spawned: ts.spawned,
+    sessionType,
     t,
   });
 
@@ -107,6 +111,13 @@ export default function TerminalView({ sessionId, projectDir, active, visible, s
     spawnedRef: ptyResult.spawnedRef,
     dp,
   });
+
+  // Terminal sessions auto-resolve mode (no picker needed)
+  useEffect(() => {
+    if (!isTerminalSession) return;
+    if (ts.modeChoice !== null) return;
+    dp({ type: "setMode", value: "normal" });
+  }, [isTerminalSession, ts.modeChoice]);
 
   // Can this session be deleted?
   const canDelete = useStore((s) => {
@@ -162,8 +173,8 @@ export default function TerminalView({ sessionId, projectDir, active, visible, s
           )}
         </div>
       )}
-      {/* Mode picker */}
-      {(ts.restoreChoice === "resume" || ts.restoreChoice === "fresh") && ts.modeChoice === null && (
+      {/* Mode picker — Claude sessions only */}
+      {!isTerminalSession && (ts.restoreChoice === "resume" || ts.restoreChoice === "fresh") && ts.modeChoice === null && (
         <div className="mode-picker">
           <span className="mode-picker__title">{t("mode.title")}</span>
           <div className="mode-picker__options">
@@ -231,8 +242,8 @@ export default function TerminalView({ sessionId, projectDir, active, visible, s
         </div>
       )}
       <div ref={containerRef} className="terminal-container" />
-      {/* Mode toggle button */}
-      {ts.modeChoice && ts.spawned && (
+      {/* Mode toggle button — Claude sessions only */}
+      {!isTerminalSession && ts.modeChoice && ts.spawned && (
         <button
           className={`mode-toggle ${ts.modeChoice === "yolo" ? "mode-toggle--yolo" : "mode-toggle--safe"}`}
           title={ts.modeChoice === "yolo" ? t("mode.toggleToSafe") : t("mode.toggleToDanger")}
