@@ -169,7 +169,7 @@ export default function App() {
   if (!loaded) return <div className="app" style={centeredAppStyle}><span style={dimTextStyle}>{t("app.loading")}</span></div>;
 
   if (!activeProject || !activeSession) {
-    trackEvent("onboarding_shown");
+    if (!ui.prevActivePid) trackEvent("onboarding_shown");
     return (
       <div className="app" style={centeredAppStyle}>
         <div className="onboarding">

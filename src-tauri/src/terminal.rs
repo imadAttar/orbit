@@ -482,9 +482,25 @@ pub fn collect_crash_report(error_message: String) -> Result<String, String> {
     let home = super::pty::home_dir();
     let log_path = std::path::Path::new(&home).join(".orbit").join("logs").join("orbit.log");
 
-    // Read last 100 lines of log
-    let recent_logs = if let Ok(content) = std::fs::read_to_string(&log_path) {
-        let lines: Vec<&str> = content.lines().collect();
+    // Sanitize error message
+    let safe_error: String = error_message
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(500)
+        .collect();
+
+    // Read last 64KB of log file, then take last 100 lines
+    let recent_logs = if let Ok(file) = std::fs::File::open(&log_path) {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = file;
+        let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+        let max_read: u64 = 65_536;
+        if len > max_read {
+            let _ = file.seek(SeekFrom::End(-(max_read as i64)));
+        }
+        let mut buf = String::new();
+        let _ = file.read_to_string(&mut buf);
+        let lines: Vec<&str> = buf.lines().collect();
         let start = if lines.len() > 100 { lines.len() - 100 } else { 0 };
         lines[start..].join("\n")
     } else {
@@ -493,14 +509,14 @@ pub fn collect_crash_report(error_message: String) -> Result<String, String> {
 
     let report = format!(
         "## Crash Report\n\n\
-         **Error:** {}\n\
+         **Error:** `{}`\n\
          **OS:** {} {}\n\
          **Arch:** {}\n\
          **App version:** {}\n\n\
          <details>\n<summary>Recent logs (last 100 lines)</summary>\n\n\
          ```\n{}\n```\n\n\
          </details>",
-        error_message,
+        safe_error,
         std::env::consts::OS,
         std::env::consts::FAMILY,
         std::env::consts::ARCH,

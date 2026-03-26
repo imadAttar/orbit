@@ -65,11 +65,26 @@ export function useAppInit(dispatch: (action: any) => void) {
 
   // Track active usage time and session duration
   useEffect(() => {
-    const startTime = Date.now();
-    const onFocus = () => trackEvent("window_focused");
-    const onBlur = () => trackEvent("window_blurred", { activeMs: Date.now() - startTime });
+    const appStart = Date.now();
+    let lastFocusTime = Date.now();
+    let lastEventTime = 0;
+    const throttleMs = 2000;
+
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - lastEventTime < throttleMs) return;
+      lastEventTime = now;
+      lastFocusTime = now;
+      trackEvent("window_focused");
+    };
+    const onBlur = () => {
+      const now = Date.now();
+      if (now - lastEventTime < throttleMs) return;
+      lastEventTime = now;
+      trackEvent("window_blurred", { activeMs: now - lastFocusTime });
+    };
     const onBeforeUnload = () => {
-      trackEvent("app_closed", { sessionDurationMs: Date.now() - startTime });
+      trackEvent("app_closed", { sessionDurationMs: Date.now() - appStart });
     };
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
