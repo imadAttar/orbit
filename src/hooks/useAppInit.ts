@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "../core/store";
-import { claude, statusline, listen } from "../core/api";
+import { pty, claude, statusline, listen } from "../core/api";
 import { initAnalytics, trackEvent } from "../lib/analytics";
 import { isWindows } from "../lib/platform";
 import { initUpdater, onUpdateStatus } from "../features/updater";
@@ -85,6 +85,13 @@ export function useAppInit(dispatch: (action: any) => void) {
     };
     const onBeforeUnload = () => {
       trackEvent("app_closed", { sessionDurationMs: Date.now() - appStart });
+      // Kill all active PTYs to prevent orphaned Claude processes
+      const state = useStore.getState();
+      for (const p of state.projects) {
+        for (const s of p.sessions) {
+          pty.killSilent(s.id);
+        }
+      }
     };
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);

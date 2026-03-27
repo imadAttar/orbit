@@ -1,4 +1,4 @@
-import { useEffect, useRef, useReducer } from "react";
+import { useEffect, useRef, useReducer, memo } from "react";
 import { useStore } from "../../core/store";
 import { trackEvent } from "../../lib/analytics";
 import { pty, claude } from "../../core/api";
@@ -54,7 +54,7 @@ interface Props {
   sessionType?: "claude" | "terminal";
 }
 
-export default function TerminalView({ sessionId, projectDir, active, visible, searchOpen, onSearchClose, sessionType }: Props) {
+export default memo(function TerminalView({ sessionId, projectDir, active, visible, searchOpen, onSearchClose, sessionType }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const t = useT();
   const [ts, dp] = useReducer(termReducer, INITIAL_TERM_STATE);
@@ -267,4 +267,4 @@ export default function TerminalView({ sessionId, projectDir, active, visible, s
       )}
     </div>
   );
-}
+});

@@ -1,5 +1,5 @@
 import { useReducer, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
-import { useStore } from "./core/store";
+import { useStore, selectActiveProject, selectActiveSession } from "./core/store";
 import { pty } from "./core/api";
 import { trackEvent } from "./lib/analytics";
 import { useT } from "./i18n/i18n";
@@ -64,19 +64,16 @@ const dimTextStyle: React.CSSProperties = { color: "var(--text-dim)" };
 
 export default function App() {
   const t = useT();
-  const projects = useStore((s) => s.projects);
+  // Scalar selectors only — never subscribe to objects that change often
   const activePid = useStore((s) => s.activePid);
   const activeSid = useStore((s) => s.activeSid);
-  const settings = useStore((s) => s.settings);
   const loaded = useStore((s) => s.loaded);
-  const notifiedSessions = useStore((s) => s.notifiedSessions);
-  const sessionCosts = useStore((s) => s.sessionCosts);
   const splitLayout = useStore((s) => s.splitLayout);
-  const setActiveProject = useStore((s) => s.setActiveProject);
+  // Stable selectors — return same ref if project/session unchanged
+  const activeProject = useStore(selectActiveProject);
+  const activeSession = useStore(selectActiveSession);
+  // Actions (stable refs — zustand actions never change)
   const removeSession = useStore((s) => s.removeSession);
-  const removeProject = useStore((s) => s.removeProject);
-  const renameProject = useStore((s) => s.renameProject);
-  const clearNotification = useStore((s) => s.clearNotification);
   const setSidebarWidth = useStore((s) => s.setSidebarWidth);
 
   const [ui, dispatch] = useReducer(uiReducer, {
@@ -90,9 +87,11 @@ export default function App() {
   useAppInit(dispatch);
   useThemeSync();
 
-  const activeProject = projects.find((p) => p.id === activePid);
   if (activePid !== ui.prevActivePid) dispatch({ type: "resetForProject", activePid });
-  const activeSession = activeProject?.sessions.find((s) => s.id === activeSid);
+
+  const handleSearchClose = useCallback(() => {
+    dispatch({ type: "set", field: "searchOpen", value: false });
+  }, []);
 
   const handleResizeStart = useCallback(() => {
     resizingRef.current = true;
@@ -172,9 +171,8 @@ export default function App() {
 
   return (
     <div className="app">
-      <TabBar projects={projects} activePid={activePid} notifiedSessions={notifiedSessions}
-        onSelectProject={(pid) => setActiveProject(pid)} onRenameProject={renameProject} onRemoveProject={removeProject}
-        onClearNotification={clearNotification} onNewProject={() => dispatch({ type: "set", field: "showNewProject", value: true })}
+      <TabBar
+        onNewProject={() => dispatch({ type: "set", field: "showNewProject", value: true })}
         onCommandPalette={() => dispatch({ type: "set", field: "showCommandPalette", value: true })} />
 
       <div className="main">
@@ -195,19 +193,14 @@ export default function App() {
                     projectDir={activeProject.dir} ratio={splitLayout.ratio} searchOpen={ui.searchOpen}
                     onSearchClose={() => dispatch({ type: "set", field: "searchOpen", value: false })} />
                 )}
-                {!isSplit && projects.map((p) =>
-                  p.sessions.map((s) => {
-                    const isThisActive = p.id === activePid && s.id === activeSid;
-                    return (
-                      <TerminalView key={s.id} sessionId={s.id} projectDir={p.dir}
-                        active={isThisActive}
-                        visible={isThisActive}
-                        searchOpen={isThisActive && ui.searchOpen}
-                        onSearchClose={() => dispatch({ type: "set", field: "searchOpen", value: false })}
-                        sessionType={s.type ?? "claude"} />
-                    );
-                  })
-                )}
+                {!isSplit && activeProject.sessions.map((s) => (
+                  <TerminalView key={s.id} sessionId={s.id} projectDir={activeProject.dir}
+                    active={s.id === activeSid}
+                    visible={s.id === activeSid}
+                    searchOpen={s.id === activeSid && ui.searchOpen}
+                    onSearchClose={handleSearchClose}
+                    sessionType={s.type ?? "claude"} />
+                ))}
                 {ui.showPromptCoach && <Suspense fallback={null}><PromptCoach onSend={sendFromCoach} onClose={() => dispatch({ type: "set", field: "showPromptCoach", value: false })} /></Suspense>}
               </div>
               <ErrorBoundary><Suspense fallback={null}><DiffViewer /></Suspense></ErrorBoundary>
@@ -218,7 +211,7 @@ export default function App() {
       </div>
 
       <UpdateBanner status={ui.updateStatus} />
-      <StatusBar activeProject={activeProject} activeSession={activeSession} activeCost={sessionCosts[activeSid]} isSplit={!!isSplit} theme={settings.theme} fontSize={settings.fontSize} />
+      <StatusBar />
 
       <ErrorBoundary>
         {ui.showNewProject && <Suspense fallback={null}><NewProjectModal onClose={() => dispatch({ type: "set", field: "showNewProject", value: false })} /></Suspense>}
