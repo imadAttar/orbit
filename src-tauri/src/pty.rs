@@ -72,7 +72,7 @@ pub fn spawn_pty(
     // Shell-only mode: spawn user's default shell instead of Claude
     let mut cmd = if shell_only.unwrap_or(false) {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-            if cfg!(target_os = "windows") { "cmd.exe".to_string() } else { "/bin/zsh".to_string() }
+            if cfg!(target_os = "windows") { "cmd.exe".to_string() } else { "/bin/sh".to_string() }
         });
         CommandBuilder::new(shell)
     } else {

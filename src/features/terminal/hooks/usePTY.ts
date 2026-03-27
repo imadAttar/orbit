@@ -7,7 +7,6 @@ import { useStore } from "../../../core/store";
 import { THEMES } from "../../../lib/themes";
 import { stripAnsi } from "../../../lib/terminalParser";
 import { trackEvent } from "../../../lib/analytics";
-import { logger } from "../../../lib/logger";
 import { pty, terminal, scrollback, listen } from "../../../core/api";
 import { useScrollback } from "./useScrollback";
 import { useSessionStatePoller } from "../../../hooks/useSessionStatePoller";
@@ -140,9 +139,14 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
 
     let cancelled = false;
     const sid = sessionId;
+    let lastCostUpdate = 0;
 
     (async () => {
       try {
+        // Kill any existing PTY for this session before respawning (e.g. mode toggle, reset)
+        // Fire-and-forget — don't await IPC to avoid blocking the UI
+        pty.killSilent(sid);
+
         // Restore scrollback if user chose "resume"
         if (shouldRestore) {
           try {
@@ -216,11 +220,16 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
 
             term.write(payload.data);
 
-            const clean = stripAnsi(payload.data);
-            const costMatches = clean.match(/\$(\d+\.\d{2})/g);
-            const cost = costMatches ? parseFloat(costMatches[costMatches.length - 1].slice(1)) || null : null;
-            if (cost !== null) {
-              useStore.getState().updateSessionCost(sid, cost);
+            // Throttle cost extraction to max 1/sec — avoids store churn on heavy output
+            const now = Date.now();
+            if (now - lastCostUpdate > 1000) {
+              const clean = stripAnsi(payload.data);
+              const costMatches = clean.match(/\$(\d+\.\d{2})/g);
+              const cost = costMatches ? parseFloat(costMatches[costMatches.length - 1].slice(1)) || null : null;
+              if (cost !== null) {
+                lastCostUpdate = now;
+                useStore.getState().updateSessionCost(sid, cost);
+              }
             }
           }
         );
@@ -266,9 +275,9 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
       unlistenRef.current?.();
       unlistenRef.current = null;
 
-      pty.kill(sid).catch((err: unknown) => {
-        logger.warn("terminal", `kill_pty failed: ${err}`);
-      });
+      // Do NOT kill the PTY here — it lives independently of the React component.
+      // PTY is killed only when the user explicitly removes the session (store.removeSession).
+      // This prevents freeze when switching projects (old PTY kill blocks new PTY spawn).
 
       term.dispose();
       termRef.current = null;

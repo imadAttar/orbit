@@ -1,34 +1,24 @@
 import { useState, memo } from "react";
-import type { Project } from "../core/types";
+import { useStore } from "../core/store";
 import { useT } from "../i18n/i18n";
 import { modLabel } from "../lib/platform";
 import { trackEvent } from "../lib/analytics";
 import InlineRename from "../shared/InlineRename";
 
 interface Props {
-  projects: Project[];
-  activePid: string;
-  notifiedSessions: Record<string, boolean>;
-  onSelectProject: (pid: string) => void;
-  onRenameProject: (pid: string, name: string) => void;
-  onRemoveProject: (pid: string) => void;
-  onClearNotification: (sid: string) => void;
   onNewProject: () => void;
   onCommandPalette: () => void;
 }
 
-export default memo(function TabBar({
-  projects,
-  activePid,
-  notifiedSessions,
-  onSelectProject,
-  onRenameProject,
-  onRemoveProject,
-  onClearNotification,
-  onNewProject,
-  onCommandPalette,
-}: Props) {
+export default memo(function TabBar({ onNewProject, onCommandPalette }: Props) {
   const t = useT();
+  const projects = useStore((s) => s.projects);
+  const activePid = useStore((s) => s.activePid);
+  const notifiedSessions = useStore((s) => s.notifiedSessions);
+  const setActiveProject = useStore((s) => s.setActiveProject);
+  const removeProject = useStore((s) => s.removeProject);
+  const renameProject = useStore((s) => s.renameProject);
+  const clearNotification = useStore((s) => s.clearNotification);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
 
   return (
@@ -43,19 +33,19 @@ export default memo(function TabBar({
             tabIndex={0}
             className={`tab ${p.id === activePid ? "tab--active" : ""} ${projectNotified ? "tab--notified" : ""}`}
             onClick={() => {
-              onSelectProject(p.id);
+              setActiveProject(p.id);
               trackEvent("project_switched");
               if (projectNotified) {
-                p.sessions.forEach((s) => onClearNotification(s.id));
+                p.sessions.forEach((s) => clearNotification(s.id));
               }
             }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectProject(p.id); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveProject(p.id); } }}
             onDoubleClick={() => setRenamingTab(p.id)}
           >
             {renamingTab === p.id ? (
               <InlineRename
                 value={p.name}
-                onConfirm={(v) => { onRenameProject(p.id, v); setRenamingTab(null); trackEvent("project_renamed"); }}
+                onConfirm={(v) => { renameProject(p.id, v); setRenamingTab(null); trackEvent("project_renamed"); }}
                 onCancel={() => setRenamingTab(null)}
               />
             ) : (
@@ -69,8 +59,8 @@ export default memo(function TabBar({
                 role="button"
                 tabIndex={0}
                 className="tab__close"
-                onClick={(e) => { e.stopPropagation(); onRemoveProject(p.id); trackEvent("project_deleted"); }}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onRemoveProject(p.id); } }}
+                onClick={(e) => { e.stopPropagation(); removeProject(p.id); trackEvent("project_deleted"); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); removeProject(p.id); } }}
               >
                 &times;
               </span>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
+import { render, cleanup } from "@testing-library/react";
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
   readTextFile: vi.fn().mockRejectedValue(new Error("no fs")),
@@ -20,56 +20,66 @@ vi.mock("../../lib/themes", () => ({
 }));
 
 import StatusBar from "../../layout/StatusBar";
-import type { Project, Session } from "../../core/types";
+import { useStore } from "../../core/store";
 
-const session: Session = { id: "s1", name: "Main Session" };
-const project: Project = { id: "p1", name: "TestProject", dir: "/home/user/project", sessions: [session] };
-
-const defaultProps = () => ({
-  activeProject: project,
-  activeSession: session,
-  activeCost: undefined as number | undefined,
-  isSplit: false,
-  theme: "orbit",
-  fontSize: 14,
-});
+function setupStore(overrides: Record<string, unknown> = {}) {
+  useStore.setState({
+    projects: [{
+      id: "p1", name: "TestProject", dir: "/home/user/project",
+      sessions: [{ id: "s1", name: "Main Session" }],
+    }],
+    activePid: "p1",
+    activeSid: "s1",
+    sessionCosts: {},
+    sessionStates: {},
+    sessionTools: {},
+    sessionChangedFiles: {},
+    settings: {
+      terminal: "default" as const, editor: "vscode" as const, theme: "orbit" as const,
+      fontSize: 14, sidebarWidth: 220, analytics: true, statuslineAsked: false,
+      autoUpdate: true, defaultMode: "normal" as const, language: "fr" as const,
+    },
+    splitLayout: { type: "none" as const, primarySid: "", ratio: 0.5 },
+    gitPending: false, gitFiles: [], gitDiff: "",
+    ...overrides,
+  });
+}
 
 describe("StatusBar", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    cleanup();
+    setupStore();
   });
 
   it("renders project dir", () => {
-    const { getByText } = render(<StatusBar {...defaultProps()} />);
+    const { getByText } = render(<StatusBar />);
     expect(getByText("/home/user/project")).toBeTruthy();
   });
 
   it("renders session name", () => {
-    const { container } = render(<StatusBar {...defaultProps()} />);
+    const { container } = render(<StatusBar />);
     expect(container.textContent).toContain("Main Session");
   });
 
   it("shows cost when defined", () => {
-    const props = defaultProps();
-    props.activeCost = 1.5;
-    const { getByText } = render(<StatusBar {...props} />);
+    setupStore({ sessionCosts: { s1: 1.5 } });
+    const { getByText } = render(<StatusBar />);
     expect(getByText("$1.50")).toBeTruthy();
   });
 
   it("does not show cost when undefined", () => {
-    const { container } = render(<StatusBar {...defaultProps()} />);
+    const { container } = render(<StatusBar />);
     expect(container.querySelector(".status-bar__cost")).toBeNull();
   });
 
   it("shows Split badge when isSplit", () => {
-    const props = defaultProps();
-    props.isSplit = true;
-    const { getByText } = render(<StatusBar {...props} />);
+    setupStore({ splitLayout: { type: "vertical", primarySid: "s1", secondarySid: "s2", ratio: 0.5 } });
+    const { getByText } = render(<StatusBar />);
     expect(getByText("statusbar.split")).toBeTruthy();
   });
 
   it("does not show Split badge when not split", () => {
-    const { container } = render(<StatusBar {...defaultProps()} />);
+    const { container } = render(<StatusBar />);
     expect(container.querySelector(".status-bar__badge")).toBeNull();
   });
 });

@@ -1,50 +1,41 @@
 import { memo } from "react";
-import type { Project, Session } from "../core/types";
 import { trackEvent } from "../lib/analytics";
 import { THEMES } from "../lib/themes";
-import { useStore } from "../core/store";
+import { useStore, selectActiveProject, selectActiveSession } from "../core/store";
 import { useT } from "../i18n/i18n";
 
-interface Props {
-  activeProject: Project;
-  activeSession: Session;
-  activeCost: number | undefined;
-  isSplit: boolean;
-  theme: string;
-  fontSize: number;
-}
-
-export default memo(function StatusBar({ activeProject, activeSession, activeCost, isSplit, theme, fontSize }: Props) {
+export default memo(function StatusBar() {
   const t = useT();
+
+  // Scalar selectors — stable refs, no unnecessary re-renders
+  const activeProject = useStore(selectActiveProject);
+  const activeSession = useStore(selectActiveSession);
+  const activeCost = useStore((s) => s.sessionCosts[s.activeSid]);
+  const theme = useStore((s) => s.settings.theme);
+  const fontSize = useStore((s) => s.settings.fontSize);
+  const isSplit = useStore((s) => s.splitLayout.type !== "none");
   const gitPending = useStore((s) => s.gitPending);
   const gitFiles = useStore((s) => s.gitFiles);
   const setShowGitPanel = useStore((s) => s.setShowGitPanel);
 
-  // Structured session state from hooks
-  const sessionState = useStore((s) => {
-    const claudeId = activeSession.claudeSessionId;
-    if (!claudeId) return null;
-    const state = s.sessionStates[claudeId];
-    if (!state) return null;
-    return {
-      state,
-      tool: s.sessionTools[claudeId] || null,
-      changedFiles: s.sessionChangedFiles[claudeId] || [],
-    };
-  });
+  const claudeId = activeSession?.claudeSessionId;
+  const sessionStateName = useStore((s) => claudeId ? s.sessionStates[claudeId] ?? null : null);
+  const sessionTool = useStore((s) => claudeId ? s.sessionTools[claudeId] ?? null : null);
+
+  if (!activeProject || !activeSession) return null;
 
   return (
     <div className="status-bar">
       <span>{activeProject.dir}</span>
       <div className="status-bar__sep" />
       <span>{activeSession.name}</span>
-      {sessionState && (
+      {sessionStateName && (
         <>
           <div className="status-bar__sep" />
-          <span className={`status-bar__state status-bar__state--${sessionState.state}`}>
-            {sessionState.state === "working" && sessionState.tool
-              ? sessionState.tool
-              : sessionState.state}
+          <span className={`status-bar__state status-bar__state--${sessionStateName}`}>
+            {sessionStateName === "working" && sessionTool
+              ? sessionTool
+              : sessionStateName}
           </span>
         </>
       )}
@@ -67,7 +58,7 @@ export default memo(function StatusBar({ activeProject, activeSession, activeCos
       {isSplit && <span className="status-bar__badge">{t("statusbar.split")}</span>}
       <span>{fontSize}px</span>
       <div className="status-bar__sep" />
-      <span>{THEMES[theme as keyof typeof THEMES]?.label}</span>
+      <span>{THEMES[theme]?.label}</span>
     </div>
   );
 });
