@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { Session } from "../core/types";
 import { useStore, selectActiveProject } from "../core/store";
 import { trackEvent } from "../lib/analytics";
@@ -37,6 +37,16 @@ export default function Sidebar({
   const [renamingSession, setRenamingSession] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
+  // Listen for rename-session event from context menu
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const sid = (e as CustomEvent).detail?.sessionId;
+      if (sid) setRenamingSession(sid);
+    };
+    window.addEventListener("rename-session", handler);
+    return () => window.removeEventListener("rename-session", handler);
+  }, []);
+
   const sidebarStyle = useMemo(() => ({ width: sidebarWidth }), [sidebarWidth]);
 
   const bookmarkStyles = useMemo(() => {
@@ -51,10 +61,10 @@ export default function Sidebar({
     return map;
   }, [bookmarks, scores, maxScore]);
 
-  if (!activeProject) return null;
+  if (!activeProject?.sessions) return null;
 
   return (
-    <div className="sidebar" style={sidebarStyle}>
+    <div className="sidebar" style={sidebarStyle} data-testid="sidebar">
       <div className="sidebar__header">{t("session.sessions")}</div>
       <div className="sidebar__sessions">
         {activeProject.sessions.map((s: Session, idx: number) => (
@@ -62,6 +72,7 @@ export default function Sidebar({
             key={s.id}
             role="button"
             tabIndex={0}
+            data-testid="session-item"
             className={`session-item ${s.id === activeSid ? "session-item--active" : ""} ${dragOverId === s.id ? "session-item--drag-over" : ""} ${notifiedSessions[s.id] ? "session-item--notified" : ""}`}
             draggable
             onDragStart={(e) => e.dataTransfer.setData("text/plain", s.id)}
@@ -76,7 +87,7 @@ export default function Sidebar({
                 trackEvent("session_reordered");
               }
             }}
-            onClick={() => { setActiveSession(s.id); clearNotification(s.id); trackEvent("session_switched"); }}
+            onClick={() => { if (s.id !== activeSid) { setActiveSession(s.id); trackEvent("session_switched"); } clearNotification(s.id); }}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveSession(s.id); clearNotification(s.id); } }}
             onDoubleClick={() => setRenamingSession(s.id)}
             onContextMenu={(e) => { e.preventDefault(); onContextMenu(s.id, e.clientX, e.clientY); }}
@@ -116,7 +127,7 @@ export default function Sidebar({
           </div>
         ))}
         <div className="sidebar__add-row">
-          <button className="sidebar__add-btn sidebar__add-btn--claude" onClick={() => { addSession(); trackEvent("session_created"); }} aria-label={t("session.addClaudeSession")}>
+          <button data-testid="add-claude-session" className="sidebar__add-btn sidebar__add-btn--claude" onClick={() => { addSession(); trackEvent("session_created"); }} aria-label={t("session.addClaudeSession")}>
             {t("session.addClaudeSession")}
           </button>
           <button className="sidebar__add-btn sidebar__add-btn--terminal" onClick={() => { addSession(undefined, "terminal"); trackEvent("terminal_session_created"); }} aria-label={t("session.addTerminalSession")}>

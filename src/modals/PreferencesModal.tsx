@@ -91,13 +91,14 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="modal-overlay" role="presentation" onClick={handleCancel} onKeyDown={(e) => { if (e.key === "Escape") handleCancel(); }}>
-      <div className="prefs" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <div className="prefs" role="dialog" aria-modal="true" data-testid="preferences-modal" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <FocusTrap>
         <nav className="prefs__nav">
           <div className="prefs__nav-title">{t("prefs.title")}</div>
           {tabs.map((tab) => (
             <button
               key={tab.id}
+              data-testid={`prefs-tab-${tab.id}`}
               className={`prefs__nav-item ${prefs.tab === tab.id ? "prefs__nav-item--active" : ""}`}
               onClick={() => dispatch({ type: "setTab", value: tab.id })}
             >
@@ -111,7 +112,7 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
             <div className="prefs__panel">
               <label className="modal__label">
                 {t("prefs.theme")}
-                <select className="modal__select" value={prefs.theme} onChange={(e) => dispatch({ type: "set", field: "theme", value: e.target.value })}>
+                <select data-testid="theme-select" className="modal__select" value={prefs.theme} onChange={(e) => dispatch({ type: "set", field: "theme", value: e.target.value })}>
                   {(Object.keys(THEMES) as ThemeName[]).map((key) => (
                     <option key={key} value={key}>{THEMES[key].label}</option>
                   ))}
@@ -202,7 +203,7 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
           {prefs.tab !== "shortcuts" && (
             <div className="prefs__footer">
               <button className="modal__btn--secondary" onClick={handleCancel}>{t("common.cancel")}</button>
-              <button className="modal__btn--primary" onClick={handleSave}>{t("common.save")}</button>
+              <button data-testid="prefs-save" className="modal__btn--primary" onClick={handleSave}>{t("common.save")}</button>
             </div>
           )}
         </div>
