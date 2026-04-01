@@ -19,6 +19,7 @@ export default function InlineRename({
   return (
     <input
       ref={ref}
+      data-testid="inline-rename-input"
       className="inline-rename"
       value={text}
       onChange={(e) => setText(e.target.value)}
