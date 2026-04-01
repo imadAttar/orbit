@@ -72,6 +72,7 @@ export default function App() {
   // Stable selectors — return same ref if project/session unchanged
   const activeProject = useStore(selectActiveProject);
   const activeSession = useStore(selectActiveSession);
+  const allProjects = useStore((s) => s.projects);
   // Actions (stable refs — zustand actions never change)
   const removeSession = useStore((s) => s.removeSession);
   const setSidebarWidth = useStore((s) => s.setSidebarWidth);
@@ -193,14 +194,16 @@ export default function App() {
                     projectDir={activeProject.dir} ratio={splitLayout.ratio} searchOpen={ui.searchOpen}
                     onSearchClose={() => dispatch({ type: "set", field: "searchOpen", value: false })} />
                 )}
-                {!isSplit && activeProject.sessions.map((s) => (
-                  <TerminalView key={s.id} sessionId={s.id} projectDir={activeProject.dir}
-                    active={s.id === activeSid}
-                    visible={s.id === activeSid}
-                    searchOpen={s.id === activeSid && ui.searchOpen}
-                    onSearchClose={handleSearchClose}
-                    sessionType={s.type ?? "claude"} />
-                ))}
+                {!isSplit && allProjects.flatMap((p) =>
+                  p.sessions.map((s) => (
+                    <TerminalView key={s.id} sessionId={s.id} projectDir={p.dir}
+                      active={p.id === activePid && s.id === activeSid}
+                      visible={p.id === activePid && s.id === activeSid}
+                      searchOpen={p.id === activePid && s.id === activeSid && ui.searchOpen}
+                      onSearchClose={handleSearchClose}
+                      sessionType={s.type ?? "claude"} />
+                  ))
+                )}
                 {ui.showPromptCoach && <Suspense fallback={null}><PromptCoach onSend={sendFromCoach} onClose={() => dispatch({ type: "set", field: "showPromptCoach", value: false })} /></Suspense>}
               </div>
               <ErrorBoundary><Suspense fallback={null}><DiffViewer /></Suspense></ErrorBoundary>
@@ -220,6 +223,7 @@ export default function App() {
         {ui.contextMenu && (
           <div className="context-menu-overlay" role="presentation" onClick={() => dispatch({ type: "set", field: "contextMenu", value: null })} onKeyDown={(e) => { if (e.key === "Escape") dispatch({ type: "set", field: "contextMenu", value: null }); }}>
             <div className="context-menu" role="menu" style={contextMenuStyle} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+              <button className="context-menu__item" onClick={() => { window.dispatchEvent(new CustomEvent("rename-session", { detail: { sessionId: ui.contextMenu!.sid } })); dispatch({ type: "set", field: "contextMenu", value: null }); }}>{t("session.rename")}</button>
               <button className="context-menu__item" onClick={() => { window.dispatchEvent(new CustomEvent("reset-session", { detail: { sessionId: ui.contextMenu!.sid } })); trackEvent("session_reset"); dispatch({ type: "set", field: "contextMenu", value: null }); }}>{t("session.reset")}</button>
               {activeProject.sessions.length > 1 && <button className="context-menu__item context-menu__item--danger" onClick={() => { dispatch({ type: "set", field: "confirmDeleteSession", value: ui.contextMenu!.sid }); dispatch({ type: "set", field: "contextMenu", value: null }); }}>{t("common.delete")}</button>}
             </div>

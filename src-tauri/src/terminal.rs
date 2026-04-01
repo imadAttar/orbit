@@ -59,7 +59,7 @@ pub fn open_terminal(terminal: String, dir: String) -> Result<(), String> {
         }
         "powershell" => {
             Command::new("powershell")
-                .args(["-NoExit", "-Command", "Set-Location -LiteralPath $args[0]", "-args", &dir])
+                .args(["-NoExit", "-Command", &format!("Set-Location -LiteralPath '{}'", dir.replace('\'', "''"))])
                 .spawn()
                 .map_err(|e| format!("Failed to open PowerShell: {e}"))?;
         }
@@ -171,7 +171,8 @@ pub fn open_in_editor(editor: String, path: String, line: u32, project_dir: Stri
             #[cfg(target_os = "macos")]
             {
                 // Use a temporary script to avoid AppleScript injection entirely
-                let tmp = std::env::temp_dir().join("orbit-nvim.sh");
+                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+                let tmp = std::env::temp_dir().join(format!("orbit-nvim-{}-{}.sh", std::process::id(), ts));
                 let mut args_line = String::from("exec nvim");
                 if line > 0 {
                     args_line.push_str(&format!(" +{line_str}"));
@@ -182,10 +183,14 @@ pub fn open_in_editor(editor: String, path: String, line: u32, project_dir: Stri
                     .map_err(|e| format!("Failed to write temp script: {e}"))?;
                 std::fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755))
                     .map_err(|e| format!("Failed to set permissions: {e}"))?;
+                let tmp_str = tmp.to_str()
+                    .ok_or_else(|| "Temp script path is not valid UTF-8".to_string())?;
                 Command::new("open")
-                    .args(["-a", "Terminal", tmp.to_str().unwrap_or(""), "--args", &full_path])
+                    .args(["-a", "Terminal", tmp_str, "--args", &full_path])
                     .spawn()
                     .map_err(|e| format!("Failed to open Neovim: {e}"))?;
+                // Clean up temp script after spawn (process has forked)
+                let _ = std::fs::remove_file(&tmp);
             }
             #[cfg(target_os = "linux")]
             {
@@ -280,9 +285,8 @@ pub fn save_scrollback(session_id: String, data: String) -> Result<(), String> {
     validate_session_id(&session_id)?;
     let home = super::pty::home_dir();
     let dir = std::path::Path::new(&home).join(".claude-ide").join("scrollback");
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("[scrollback] Failed to create directory {}: {e}", dir.display());
-    }
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create scrollback directory {}: {e}", dir.display()))?;
     let path = dir.join(format!("{session_id}.txt"));
     // Truncate to last MAX_SCROLLBACK_BYTES to avoid filling disk
     let truncated = if data.len() > MAX_SCROLLBACK_BYTES {
@@ -468,7 +472,7 @@ pub fn write_orbit_file(name: String, data: String) -> Result<(), String> {
     let home = super::pty::home_dir();
     let dir = std::path::Path::new(&home).join(".orbit");
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("[orbit] Failed to create directory {}: {e}", dir.display());
+        tracing::warn!("Failed to create orbit directory {}: {e}", dir.display());
     }
     let path = dir.join(&name);
     std::fs::write(&path, data.as_bytes())

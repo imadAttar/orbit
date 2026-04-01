@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "../../../core/store";
-import { pty, scrollback } from "../../../core/api";
+import { scrollback } from "../../../core/api";
 import type { Terminal as XTerm } from "@xterm/xterm";
 
 interface RestoreConfig {
@@ -35,20 +35,24 @@ export function useTerminalRestore({
   // Check if scrollback exists — show prompt if yes, auto-start if no
   useEffect(() => {
     if (!activated) return;
+    let cancelled = false;
     dp({ type: "setRestore", value: "pending" });
     (async () => {
       try {
         const data = await scrollback.load(sessionId);
+        if (cancelled) return;
         if (data && data.length > 0) {
           dp({ type: "setRestore", value: "ask" });
         } else {
           dp({ type: "setRestore", value: "fresh" });
         }
       } catch (err) {
+        if (cancelled) return;
         import("../../../lib/logger").then(({ logger }) => logger.warn("restore", `scrollback check failed: ${err}`));
         dp({ type: "setRestore", value: "fresh" });
       }
     })();
+    return () => { cancelled = true; };
   }, [activated, sessionId, generation]);
 
   // Clear/reset handler
@@ -56,7 +60,7 @@ export function useTerminalRestore({
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.sessionId !== sessionId) return;
-      pty.killSilent(sessionId);
+      // PTY kill handled by Rust spawn_pty (auto-kills previous for same session_id)
       scrollback.clear(sessionId);
       if (termRef.current) {
         termRef.current.clear();
