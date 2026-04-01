@@ -1,7 +1,7 @@
 import { useEffect, useRef, useReducer, memo } from "react";
 import { useStore } from "../../core/store";
 import { trackEvent } from "../../lib/analytics";
-import { pty, claude } from "../../core/api";
+import { claude } from "../../core/api";
 import { logger } from "../../lib/logger";
 import { useT } from "../../i18n/i18n";
 import { usePTY } from "./hooks/usePTY";
@@ -256,7 +256,7 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
               ptyResult.termRef.current.clear();
               ptyResult.termRef.current.reset();
             }
-            pty.killSilent(sessionId);
+            // PTY kill handled by Rust spawn_pty (auto-kills previous for same session_id)
             ptyResult.spawnedRef.current = false;
             dp({ type: "reset" });
             trackEvent("mode_toggle", { mode: next });

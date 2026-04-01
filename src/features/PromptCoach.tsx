@@ -21,7 +21,7 @@ export default function PromptCoach({ onSend, onClose }: Props) {
   const [spawned, setSpawned] = useState(false);
   const [validating, setValidating] = useState(false);
   const [coachTimeout, setCoachTimeout] = useState(false);
-  const sessionIdRef = useRef(`coach-${Date.now()}`);
+  const sessionIdRef = useRef(`coach-${crypto.randomUUID()}`);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const themeName = useStore((s) => s.settings.theme);
@@ -88,6 +88,7 @@ export default function PromptCoach({ onSend, onClose }: Props) {
         });
 
       } catch (err) {
+        unlistenFn?.();
         import("../lib/logger").then(({ logger }) => logger.error("coach", `Spawn error: ${err}`));
       }
     })();

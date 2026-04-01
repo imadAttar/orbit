@@ -425,11 +425,17 @@ export const useStore = create<AppStore>((set, get) => ({
       return { projects };
     }),
 
-  removeSession: (sid) =>
+  removeSession: (sid) => {
+    // Guard first: only kill PTY if the session can actually be removed
+    const current = get();
+    const currentProj = current.projects.find((p) => p.id === current.activePid);
+    if (!currentProj || currentProj.sessions.length <= 1) return;
+    // Kill PTY BEFORE state update to prevent race with new spawn
+    pty.killSilent(sid);
+    clearScrollback(sid);
     set((s) => {
       const proj = s.projects.find((p) => p.id === s.activePid);
       if (!proj || proj.sessions.length <= 1) return s;
-      // Pick adjacent session (prefer previous, fallback to next)
       let activeSid = s.activeSid;
       if (s.activeSid === sid) {
         const idx = proj.sessions.findIndex((ss) => ss.id === sid);
@@ -442,11 +448,9 @@ export const useStore = create<AppStore>((set, get) => ({
       );
       const next = { projects, activeSid };
       persist({ ...s, ...next });
-      // Kill PTY and clean up scrollback file
-      pty.killSilent(sid);
-      clearScrollback(sid);
       return next;
-    }),
+    });
+  },
 
   setActiveSession: (sid) =>
     set((s) => {

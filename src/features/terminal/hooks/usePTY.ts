@@ -143,9 +143,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
 
     (async () => {
       try {
-        // Kill any existing PTY for this session before respawning (e.g. mode toggle, reset)
-        // Fire-and-forget — don't await IPC to avoid blocking the UI
-        pty.killSilent(sid);
+        // Rust spawn_pty auto-kills any existing PTY for this session_id (mode toggle, reset)
 
         // Restore scrollback if user chose "resume"
         if (shouldRestore) {
@@ -173,8 +171,34 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
           }
         }
 
+        // Register listener BEFORE spawn — captures all output including early bytes.
+        // spawnComplete flag ignores stale events from previous PTY (Rust kills it in spawn_pty).
+        let spawnComplete = false;
+        const unlisten = await listen<{ session_id: string; data: string }>(
+          "pty-output",
+          (payload) => {
+            if (cancelled || !spawnComplete) return;
+            if (payload.session_id !== sid) return;
+
+            term.write(payload.data);
+
+            // Throttle cost extraction to max 1/sec
+            const now = Date.now();
+            if (now - lastCostUpdate > 1000) {
+              const clean = stripAnsi(payload.data);
+              const costMatches = clean.match(/\$(\d+\.\d{2})/g);
+              const cost = costMatches ? parseFloat(costMatches[costMatches.length - 1].slice(1)) || null : null;
+              if (cost !== null) {
+                lastCostUpdate = now;
+                useStore.getState().updateSessionCost(sid, cost);
+              }
+            }
+          }
+        );
+        unlistenRef.current = unlisten;
+
+        // Spawn PTY — Rust auto-kills previous for same session_id
         if (isTerminalSession) {
-          // Plain shell — no Claude CLI
           await pty.spawn({
             sessionId: sid,
             projectDir,
@@ -183,7 +207,6 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             shellOnly: true,
           });
         } else {
-          // Claude session — generate or resume a Claude session ID
           const isResume = shouldRestore && !!claudeSessionId;
           const effectiveClaudeId = isResume
             ? claudeSessionId!
@@ -203,37 +226,14 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
           if (!isResume) {
             useStore.getState().setClaudeSessionId(sid, effectiveClaudeId);
           }
-
           useStore.getState().setDangerousMode(sid, modeChoice === "yolo");
         }
 
+        // Now accept events from the new PTY
+        spawnComplete = true;
         spawnedRef.current = true;
         onSpawned(true);
         trackEvent("pty_spawned", { restore: shouldRestore ? 1 : 0 });
-
-        // Listen for PTY output
-        const unlisten = await listen<{ session_id: string; data: string }>(
-          "pty-output",
-          (payload) => {
-            if (cancelled) return;
-            if (payload.session_id !== sid) return;
-
-            term.write(payload.data);
-
-            // Throttle cost extraction to max 1/sec — avoids store churn on heavy output
-            const now = Date.now();
-            if (now - lastCostUpdate > 1000) {
-              const clean = stripAnsi(payload.data);
-              const costMatches = clean.match(/\$(\d+\.\d{2})/g);
-              const cost = costMatches ? parseFloat(costMatches[costMatches.length - 1].slice(1)) || null : null;
-              if (cost !== null) {
-                lastCostUpdate = now;
-                useStore.getState().updateSessionCost(sid, cost);
-              }
-            }
-          }
-        );
-        unlistenRef.current = unlisten;
 
         // Forward xterm input to PTY
         let lastPromptTrack = 0;
@@ -260,6 +260,11 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
           return true;
         });
       } catch (err) {
+        // Ensure listener is cleaned up even if spawn failed
+        if (unlistenRef.current) {
+          unlistenRef.current();
+          unlistenRef.current = null;
+        }
         if (!cancelled) {
           const errMsg = err instanceof Error ? err.message : String(err);
           term.write(`\r\n\x1b[31m${t("terminal.error", { message: errMsg })}\x1b[0m\r\n`);
@@ -272,16 +277,21 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
       cancelled = true;
       spawnedRef.current = false;
       onSpawned(false);
-      unlistenRef.current?.();
+
+      // Unlisten may still be pending (async) — handle both cases
+      if (unlistenRef.current) {
+        unlistenRef.current();
+      }
       unlistenRef.current = null;
 
-      // Do NOT kill the PTY here — it lives independently of the React component.
-      // PTY is killed only when the user explicitly removes the session (store.removeSession).
-      // This prevents freeze when switching projects (old PTY kill blocks new PTY spawn).
+      // Do NOT kill the PTY here — Rust spawn_pty auto-kills previous session.
+      // PTY is also killed by store.removeSession when user explicitly deletes.
 
-      term.dispose();
+      // Guard: term may already be disposed if React unmounts during cascade
+      try { term.dispose(); } catch { /* already disposed */ }
       termRef.current = null;
       fitRef.current = null;
+      searchRef.current = null;
       serializeRef.current = null;
     };
   }, [sessionId, projectDir, activated, restoreChoice, modeChoice, generation]);

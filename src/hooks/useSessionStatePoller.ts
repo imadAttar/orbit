@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useStore } from "../core/store";
 import { git, terminal, listen } from "../core/api";
 import { trackEvent } from "../lib/analytics";
@@ -36,13 +36,10 @@ interface SessionStateData {
  * Falls back to polling if events are unavailable (non-Tauri environment).
  */
 export function useSessionStatePoller(
-  sessionId: string,
+  _sessionId: string,
   projectDir: string,
   spawned: boolean,
 ) {
-  const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
-
   useEffect(() => {
     if (!spawned) return;
 
@@ -109,6 +106,14 @@ export function useSessionStatePoller(
     return () => {
       unlisten?.();
       if (fallbackInterval) clearInterval(fallbackInterval);
+      // Clean up stale state tracking to prevent unbounded growth
+      const store = useStore.getState();
+      for (const p of store.projects) {
+        const s = p.sessions.find((s) => s.id === _sessionId);
+        if (s?.claudeSessionId) {
+          delete prevSessionStates[s.claudeSessionId];
+        }
+      }
     };
   }, [spawned, projectDir]);
 }

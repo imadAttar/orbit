@@ -239,8 +239,7 @@ fn derive_patterns(signals: &mut ActivitySignals) {
     }
 
     if signals.keywords.contains("test")
-        || (test_file_re.is_some()
-            && signals.files_edited.iter().any(|f| test_file_re.as_ref().unwrap().is_match(f)))
+        || test_file_re.as_ref().map_or(false, |re| signals.files_edited.iter().any(|f| re.is_match(f)))
     {
         signals.activity_patterns.insert("test-writing".into());
     }
@@ -644,7 +643,9 @@ pub fn setup_watcher(app: tauri::AppHandle) -> Result<(), String> {
     let app_handle = app.clone();
     let orbit_dir_clone = orbit_dir.clone();
 
-    std::thread::spawn(move || {
+    if let Err(e) = std::thread::Builder::new()
+        .name("bookmark-watcher".into())
+        .spawn(move || {
         // Keep watcher alive
         let _watcher = watcher;
 
@@ -705,7 +706,10 @@ pub fn setup_watcher(app: tauri::AppHandle) -> Result<(), String> {
                 }
             }
         }
-    });
+    }) {
+        tracing::error!("Failed to spawn bookmark watcher thread: {e}");
+        return Err(format!("Failed to spawn watcher thread: {e}"));
+    }
 
     Ok(())
 }
@@ -721,7 +725,7 @@ fn handle_score_request(app: &tauri::AppHandle, orbit_dir: &Path, raw_input: &st
     let hook_data: HookInput = match serde_json::from_str(raw_input) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("[bookmarks] Failed to parse hook input: {e}");
+            tracing::warn!("[bookmarks] Failed to parse hook input: {e}");
             return;
         }
     };
