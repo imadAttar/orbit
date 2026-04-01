@@ -25,3 +25,5 @@ src-tauri/gen/
 src-tauri/WixTools/
 artifacts/
 .claude/settings.local.json
+.claude/coach-history.md
+tests/computer-use/.orbit-test-state.json
