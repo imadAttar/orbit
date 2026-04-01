@@ -19,8 +19,6 @@ import { useThemeSync } from "./hooks/useThemeSync";
 
 // Lazy-loaded heavy components (code-split)
 const CommandPalette = lazy(() => import("./features/CommandPalette"));
-const GitPanel = lazy(() => import("./features/git/GitPanel"));
-const DiffViewer = lazy(() => import("./features/git/DiffViewer"));
 const PromptCoach = lazy(() => import("./features/PromptCoach"));
 const NewProjectModal = lazy(() => import("./modals/NewProjectModal"));
 const PreferencesModal = lazy(() => import("./modals/PreferencesModal"));
@@ -206,10 +204,8 @@ export default function App() {
                 )}
                 {ui.showPromptCoach && <Suspense fallback={null}><PromptCoach onSend={sendFromCoach} onClose={() => dispatch({ type: "set", field: "showPromptCoach", value: false })} /></Suspense>}
               </div>
-              <ErrorBoundary><Suspense fallback={null}><DiffViewer /></Suspense></ErrorBoundary>
             </div>
           </ErrorBoundary>
-          <ErrorBoundary><Suspense fallback={null}><GitPanel /></Suspense></ErrorBoundary>
         </div>
       </div>
 

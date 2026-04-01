@@ -3,7 +3,7 @@ import type { Project, Session, Settings, SplitLayout } from "./types";
 import { defaultTerminal } from "../lib/platform";
 import { detectSystemLanguage } from "../i18n/i18n";
 import { loadData, debouncedSave } from "./persistence";
-import { pty, scrollback, bookmarks as bookmarksApi, listen } from "./api";
+import { pty, scrollback, bookmarks as bookmarksApi, terminal as terminalApi, listen } from "./api";
 
 // Internal state — not in Zustand (no re-renders needed), but grouped for clarity and testability
 const _internal = {
@@ -92,6 +92,59 @@ async function setupBookmarkListeners() {
   }
 }
 
+// --- Session state detection (global listener) ---
+
+interface SessionStateData {
+  session_id: string;
+  state: string;
+  ts: number;
+  tool?: string;
+  changed_files?: string[];
+}
+
+const _prevSessionStates: Record<string, string> = {};
+
+async function setupSessionStateListener() {
+  try {
+    await listen<string>("session-state-changed", (raw) => {
+      try {
+        const data = JSON.parse(raw) as SessionStateData;
+        if (!data.session_id || !data.state) return;
+
+        const store = useStore.getState();
+
+        // Find matching session + project across ALL projects
+        let matchedSid: string | null = null;
+        let matchedProject: Project | null = null;
+        let matchedSession: Session | null = null;
+        for (const p of store.projects) {
+          const s = p.sessions.find((s) => s.claudeSessionId === data.session_id);
+          if (s) { matchedSid = s.id; matchedProject = p; matchedSession = s; break; }
+        }
+        if (!matchedSid || !matchedProject || !matchedSession) return;
+
+        const prev = _prevSessionStates[data.session_id];
+        if (prev === data.state) return;
+        _prevSessionStates[data.session_id] = data.state;
+
+        store.setSessionState(data.session_id, data.state as "working" | "idle" | "waiting");
+        if (data.tool) store.setSessionTool(data.session_id, data.tool);
+        if (data.changed_files && data.changed_files.length > 0) {
+          store.setSessionChangedFiles(data.session_id, data.changed_files);
+        }
+
+        if (data.state === "idle" && prev === "working") {
+          if (store.activeSid !== matchedSid) {
+            terminalApi.notifyDone(`${matchedProject.name} — ${matchedSession.name}`);
+          }
+        }
+      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("store", `session-state parse error: ${err}`)); }
+    });
+  } catch {
+    // Not in Tauri — skip
+  }
+}
+
 // --- Skill auto-scan ---
 
 interface SkillInfo {
@@ -151,7 +204,6 @@ interface AppStore {
   activeSid: string;
   settings: Settings;
   loaded: boolean;
-  notifiedSessions: Record<string, boolean>;
   sessionStates: Record<string, "working" | "idle" | "waiting">; // claudeSessionId -> state
   sessionTools: Record<string, string>; // claudeSessionId -> last tool used
   sessionChangedFiles: Record<string, string[]>; // claudeSessionId -> changed file paths
@@ -160,14 +212,6 @@ interface AppStore {
   sessionCosts: Record<string, number>;
   splitLayout: SplitLayout;
   focusedPane: "primary" | "secondary";
-  showGitPanel: boolean;
-  gitPending: boolean;
-  gitDiff: string;
-  gitFiles: string[];
-  proposedCommitMessage: string;
-  showDiffViewer: boolean;
-  diffContent: string;
-  diffFile: string;
   init: () => Promise<void>;
 
   addProject: (name: string, dir: string) => void;
@@ -182,8 +226,6 @@ interface AppStore {
 
   reorderSession: (sid: string, targetSid: string) => void;
 
-  notifySession: (sid: string) => void;
-  clearNotification: (sid: string) => void;
   setSessionState: (claudeSessionId: string, state: "working" | "idle" | "waiting") => void;
   setSessionTool: (claudeSessionId: string, tool: string) => void;
   setSessionChangedFiles: (claudeSessionId: string, files: string[]) => void;
@@ -214,19 +256,6 @@ interface AppStore {
   setFocusedPane: (pane: "primary" | "secondary") => void;
   setSplitRatio: (ratio: number) => void;
 
-  // Git panel
-  setShowGitPanel: (show: boolean) => void;
-  setGitPending: (pending: boolean) => void;
-  setGitDiff: (diff: string) => void;
-  setGitFiles: (files: string[]) => void;
-  setProposedCommitMessage: (msg: string) => void;
-
-
-  // Diff viewer
-  setShowDiffViewer: (show: boolean) => void;
-  setDiffContent: (content: string) => void;
-  setDiffFile: (file: string) => void;
-
 }
 
 function persist(state: AppStore) {
@@ -255,7 +284,6 @@ export const useStore = create<AppStore>((set, get) => ({
     language: detectSystemLanguage(),
   },
   loaded: false,
-  notifiedSessions: {},
   sessionStates: {},
   sessionTools: {},
   sessionChangedFiles: {},
@@ -264,14 +292,6 @@ export const useStore = create<AppStore>((set, get) => ({
   sessionCosts: {},
   splitLayout: { type: "none", primarySid: "", ratio: 0.5 },
   focusedPane: "primary",
-  showGitPanel: false,
-  gitPending: false,
-  gitDiff: "",
-  gitFiles: [],
-  proposedCommitMessage: "",
-  showDiffViewer: false,
-  diffContent: "",
-  diffFile: "",
   init: async () => {
     const data = await loadData();
     if (data && data.projects.length > 0) {
@@ -300,6 +320,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
     // Setup watcher-based event listeners (replaces polling)
     await setupBookmarkListeners();
+    await setupSessionStateListener();
     // Auto-scan skills for active project
     const activeProj2 = get().projects.find((p) => p.id === get().activePid);
     if (activeProj2) {
@@ -459,17 +480,6 @@ export const useStore = create<AppStore>((set, get) => ({
         activeSid: sid,
         projectSessions: { ...s.projectSessions, [s.activePid]: sid },
       };
-    }),
-
-  notifySession: (sid) =>
-    set((s) => ({
-      notifiedSessions: { ...s.notifiedSessions, [sid]: true },
-    })),
-
-  clearNotification: (sid) =>
-    set((s) => {
-      const { [sid]: _, ...rest } = s.notifiedSessions;
-      return { notifiedSessions: rest };
     }),
 
   setSessionState: (claudeSessionId, state) =>
@@ -653,18 +663,6 @@ export const useStore = create<AppStore>((set, get) => ({
       splitLayout: { ...s.splitLayout, ratio },
     })),
 
-  // Git panel
-  setShowGitPanel: (show) => set(() => ({ showGitPanel: show, gitPending: false })),
-  setGitPending: (pending) => set(() => ({ gitPending: pending })),
-  setGitDiff: (diff) => set(() => ({ gitDiff: diff })),
-  setGitFiles: (files) => set(() => ({ gitFiles: files })),
-  setProposedCommitMessage: (msg) => set(() => ({ proposedCommitMessage: msg })),
-
-
-  // Diff viewer
-  setShowDiffViewer: (show) => set(() => ({ showDiffViewer: show })),
-  setDiffContent: (content) => set(() => ({ diffContent: content })),
-  setDiffFile: (file) => set(() => ({ diffFile: file })),
 
 }));
 

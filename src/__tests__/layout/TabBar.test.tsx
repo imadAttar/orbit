@@ -30,7 +30,6 @@ function setupStore(overrides: Record<string, unknown> = {}) {
     ],
     activePid: "p1",
     activeSid: "s1",
-    notifiedSessions: {},
     settings: {
       terminal: "default" as const, editor: "vscode" as const, theme: "orbit" as const,
       fontSize: 11, sidebarWidth: 220, analytics: true, statuslineAsked: false,

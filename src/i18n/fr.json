@@ -1,7 +1,8 @@
 {
   "common.cancel": "Annuler",
+  "common.noop": "noop4",
   "common.close": "Fermer",
-  "common.save": "Sauvegarder",
+  "common.save": "Enregistrer",
   "common.delete": "Supprimer",
   "common.create": "Creer",
   "common.open": "Ouvrir",
@@ -41,6 +42,7 @@
   "session.rename": "Renommer",
   "session.reset": "Reinitialiser",
   "session.ready": "Pret",
+
   "session.previousAvailable": "Session precedente disponible",
   "session.resume": "Reprendre",
   "session.freshStart": "Nouvelle session",
@@ -129,22 +131,6 @@
   "coach.waiting": "En attente...",
   "coach.timeout": "Timeout — reessayer",
 
-  "git.header": "Git — {count} fichier(s) modifie(s)",
-  "git.viewDiff": "Voir le diff",
-  "git.commitPlaceholder": "Message de commit...",
-  "git.commit": "Commit",
-  "git.commitPush": "Commit + Push",
-  "git.committing": "Commit en cours...",
-  "git.pushing": "Push en cours...",
-  "git.success": "Commit reussi",
-  "git.pendingLabel": "{count} fichier(s) a commiter",
-  "git.pendingTooltip": "{count} fichier(s) modifie(s) — cliquer pour commiter",
-
-
-  "diff.accept": "Accepter",
-  "diff.reject": "Rejeter",
-  "diff.before": "Avant",
-  "diff.after": "Apres",
 
   "update.available": "Mise a jour {version} disponible",
   "update.download": "Telecharger",

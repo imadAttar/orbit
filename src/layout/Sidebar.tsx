@@ -24,11 +24,9 @@ export default function Sidebar({
   // Read directly from store instead of props
   const activeProject = useStore(selectActiveProject);
   const activeSid = useStore((s) => s.activeSid);
-  const notifiedSessions = useStore((s) => s.notifiedSessions);
   const sessionCosts = useStore((s) => s.sessionCosts);
   const sidebarWidth = useStore((s) => s.settings.sidebarWidth);
   const setActiveSession = useStore((s) => s.setActiveSession);
-  const clearNotification = useStore((s) => s.clearNotification);
   const renameSession = useStore((s) => s.renameSession);
   const addSession = useStore((s) => s.addSession);
   const removeSession = useStore((s) => s.removeSession);
@@ -73,7 +71,7 @@ export default function Sidebar({
             role="button"
             tabIndex={0}
             data-testid="session-item"
-            className={`session-item ${s.id === activeSid ? "session-item--active" : ""} ${dragOverId === s.id ? "session-item--drag-over" : ""} ${notifiedSessions[s.id] ? "session-item--notified" : ""}`}
+            className={`session-item ${s.id === activeSid ? "session-item--active" : ""} ${dragOverId === s.id ? "session-item--drag-over" : ""}`}
             draggable
             onDragStart={(e) => e.dataTransfer.setData("text/plain", s.id)}
             onDragOver={(e) => { e.preventDefault(); setDragOverId(s.id); }}
@@ -87,12 +85,12 @@ export default function Sidebar({
                 trackEvent("session_reordered");
               }
             }}
-            onClick={() => { if (s.id !== activeSid) { setActiveSession(s.id); trackEvent("session_switched"); } clearNotification(s.id); }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveSession(s.id); clearNotification(s.id); } }}
+            onClick={() => { if (s.id !== activeSid) { setActiveSession(s.id); trackEvent("session_switched"); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveSession(s.id); } }}
             onDoubleClick={() => setRenamingSession(s.id)}
             onContextMenu={(e) => { e.preventDefault(); onContextMenu(s.id, e.clientX, e.clientY); }}
           >
-            <div className={`session-item__dot ${notifiedSessions[s.id] ? "session-item__dot--notified" : s.type === "terminal" ? "session-item__dot--terminal" : "session-item__dot--has-messages"}`} />
+            <div className={`session-item__dot ${s.type === "terminal" ? "session-item__dot--terminal" : "session-item__dot--has-messages"}`} />
             {renamingSession === s.id ? (
               <InlineRename
                 value={s.name}
@@ -102,9 +100,6 @@ export default function Sidebar({
             ) : (
               <>
                 <span className="session-item__name">{s.name}</span>
-                {notifiedSessions[s.id] && (
-                  <span className="session-item__badge">{t("session.ready")}</span>
-                )}
                 <div className="session-item__meta">
                   {sessionCosts[s.id] !== undefined && (
                     <span className="session-item__cost">${sessionCosts[s.id].toFixed(2)}</span>

@@ -14,31 +14,22 @@ export default memo(function TabBar({ onNewProject, onCommandPalette }: Props) {
   const t = useT();
   const projects = useStore((s) => s.projects);
   const activePid = useStore((s) => s.activePid);
-  const notifiedSessions = useStore((s) => s.notifiedSessions);
   const setActiveProject = useStore((s) => s.setActiveProject);
   const removeProject = useStore((s) => s.removeProject);
   const renameProject = useStore((s) => s.renameProject);
-  const clearNotification = useStore((s) => s.clearNotification);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
 
   return (
     <div className="tab-bar">
       <img src="/orbit-logo.png" className="tab-bar__logo" alt="Orbit" />
       {projects.map((p) => {
-        const projectNotified = p.sessions.some((s) => notifiedSessions[s.id]);
         return (
           <div
             key={p.id}
             role="button"
             tabIndex={0}
-            className={`tab ${p.id === activePid ? "tab--active" : ""} ${projectNotified ? "tab--notified" : ""}`}
-            onClick={() => {
-              setActiveProject(p.id);
-              trackEvent("project_switched");
-              if (projectNotified) {
-                p.sessions.forEach((s) => clearNotification(s.id));
-              }
-            }}
+            className={`tab ${p.id === activePid ? "tab--active" : ""}`}
+            onClick={() => { setActiveProject(p.id); trackEvent("project_switched"); }}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveProject(p.id); } }}
             onDoubleClick={() => setRenamingTab(p.id)}
           >
@@ -49,10 +40,7 @@ export default memo(function TabBar({ onNewProject, onCommandPalette }: Props) {
                 onCancel={() => setRenamingTab(null)}
               />
             ) : (
-              <>
-                {projectNotified && <span className="tab__badge" />}
-                {p.name}
-              </>
+              p.name
             )}
             {projects.length > 1 && (
               <span
