@@ -9,7 +9,6 @@ import { stripAnsi } from "../../../lib/terminalParser";
 import { trackEvent } from "../../../lib/analytics";
 import { pty, terminal, scrollback, listen } from "../../../core/api";
 import { useScrollback } from "./useScrollback";
-import { useSessionStatePoller } from "../../../hooks/useSessionStatePoller";
 
 // File path regex for xterm link provider
 const FILE_PATH_RE = /((?:\/|\.\/|\.\.\/|[a-zA-Z]:\\)[\w.\/_\\-]+(?:\.[a-zA-Z0-9]+))(?::(\d+))?(?::(\d+))?/;
@@ -42,8 +41,8 @@ interface UsePTYResult {
  * PTY lifecycle hook — manages xterm terminal, PTY spawn/kill,
  * event listening, and input forwarding.
  *
- * Delegates scrollback persistence to useScrollback
- * and session state polling to useSessionStatePoller.
+ * Delegates scrollback persistence to useScrollback.
+ * Session state detection is handled globally in store.ts.
  */
 export function usePTY(opts: UsePTYOptions): UsePTYResult {
   const {
@@ -63,7 +62,6 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
 
   // --- Sub-hooks (self-contained lifecycle) ---
   useScrollback(termRef, serializeRef, sessionId, spawned);
-  useSessionStatePoller(sessionId, projectDir, spawned);
 
   // --- Initialize terminal + spawn PTY ---
   useEffect(() => {

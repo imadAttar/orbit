@@ -40,7 +40,6 @@ function setupStore(overrides: Record<string, unknown> = {}) {
       autoUpdate: true, defaultMode: "normal" as const, language: "fr" as const,
     },
     splitLayout: { type: "none" as const, primarySid: "", ratio: 0.5 },
-    gitPending: false, gitFiles: [], gitDiff: "",
     ...overrides,
   });
 }

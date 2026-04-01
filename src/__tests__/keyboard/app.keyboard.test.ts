@@ -112,7 +112,6 @@ describe("App keyboard shortcuts", () => {
         language: "fr" as const,
       },
       loaded: false,
-      notifiedSessions: {},
       projectSessions: {},
       splitLayout: { type: "none", primarySid: "", ratio: 0.5 },
       focusedPane: "primary" as const,

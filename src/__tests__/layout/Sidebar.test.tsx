@@ -41,7 +41,6 @@ function setupStore(overrides: Record<string, unknown> = {}) {
     }],
     activePid: "p1",
     activeSid: "s1",
-    notifiedSessions: {},
     sessionCosts: {},
     settings: {
       terminal: "default" as const,
@@ -100,22 +99,6 @@ describe("Sidebar", () => {
     expect(useStore.getState().activeSid).toBe("s2");
   });
 
-  it("shows notification badge when session is notified", () => {
-    setupStore({ notifiedSessions: { s2: true } });
-    const { container } = renderSidebar();
-    const items = container.querySelectorAll(".session-item");
-    expect(items[1]?.classList.contains("session-item--notified")).toBe(true);
-    const badge = items[1]?.querySelector(".session-item__badge");
-    expect(badge).toBeTruthy();
-    expect(badge?.textContent).toBe("session.ready");
-  });
-
-  it("does not show notification badge for non-notified sessions", () => {
-    setupStore({ notifiedSessions: { s2: true } });
-    const { container } = renderSidebar();
-    const items = container.querySelectorAll(".session-item");
-    expect(items[0]?.querySelector(".session-item__badge")).toBeNull();
-  });
 
   it("shows cost for session", () => {
     setupStore({ sessionCosts: { s1: 1.5, s3: 0.25 } });

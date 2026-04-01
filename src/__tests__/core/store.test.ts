@@ -47,14 +47,9 @@ describe("store", () => {
         language: "fr" as const,
       },
       loaded: false,
-      notifiedSessions: {},
       sessionCosts: {},
       splitLayout: { type: "none", primarySid: "", ratio: 0.5 },
       focusedPane: "primary" as const,
-      showGitPanel: false,
-      gitDiff: "",
-      gitFiles: [],
-      proposedCommitMessage: "",
     });
   });
 
@@ -218,33 +213,6 @@ describe("store", () => {
     });
   });
 
-  describe("notifications", () => {
-    it("notifySession adds to notifiedSessions record", () => {
-      getState().addProject("p", "/p");
-      const sid = getState().projects[0].sessions[0].id;
-      getState().notifySession(sid);
-      expect(getState().notifiedSessions[sid]).toBe(true);
-    });
-
-    it("clearNotification removes from notifiedSessions", () => {
-      getState().addProject("p", "/p");
-      const sid = getState().projects[0].sessions[0].id;
-      getState().notifySession(sid);
-      getState().clearNotification(sid);
-      expect(getState().notifiedSessions[sid]).toBeUndefined();
-    });
-
-    it("notifySession + clearNotification round-trip", () => {
-      getState().addProject("p", "/p");
-      const sid = getState().projects[0].sessions[0].id;
-      getState().notifySession(sid);
-      expect(getState().notifiedSessions[sid]).toBe(true);
-      getState().clearNotification(sid);
-      expect(getState().notifiedSessions[sid]).toBeUndefined();
-      getState().notifySession(sid);
-      expect(getState().notifiedSessions[sid]).toBe(true);
-    });
-  });
 
   describe("session metadata", () => {
     it("updateSessionCost stores cost for session", () => {
@@ -383,24 +351,4 @@ describe("store", () => {
     });
   });
 
-  describe("git and panels", () => {
-    it("setShowGitPanel toggles visibility", () => {
-      getState().addProject("p", "/p");
-      getState().setShowGitPanel(true);
-      expect(getState().showGitPanel).toBe(true);
-      getState().setShowGitPanel(false);
-      expect(getState().showGitPanel).toBe(false);
-    });
-
-    it("setGitFiles + setGitDiff + setProposedCommitMessage store values", () => {
-      getState().addProject("p", "/p");
-      getState().setGitFiles(["a.ts", "b.ts"]);
-      expect(getState().gitFiles).toEqual(["a.ts", "b.ts"]);
-      getState().setGitDiff("diff --git a/file");
-      expect(getState().gitDiff).toBe("diff --git a/file");
-      getState().setProposedCommitMessage("feat: add thing");
-      expect(getState().proposedCommitMessage).toBe("feat: add thing");
-    });
-
-  });
 });

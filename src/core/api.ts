@@ -82,27 +82,6 @@ export const claude = {
     call<void>("delete_claude_session", { projectDir, sessionId }),
 };
 
-// === Git Operations ===
-
-export const git = {
-  status: (projectDir: string) =>
-    call<string[]>("git_status", { projectDir }),
-
-  diff: (projectDir: string) =>
-    call<string>("git_diff", { projectDir }),
-
-  diffFile: (projectDir: string, file: string) =>
-    call<string>("git_diff_file", { projectDir, file }),
-
-  commit: (projectDir: string, message: string) =>
-    call<string>("git_commit", { projectDir, message }),
-
-  push: (projectDir: string) =>
-    call<string>("git_push", { projectDir }),
-
-  changedFiles: (projectDir: string) =>
-    call<{ status: string; file: string }[]>("git_changed_files", { projectDir }),
-};
 
 // === Terminal ===
 

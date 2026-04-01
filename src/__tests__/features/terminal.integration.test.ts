@@ -114,15 +114,10 @@ vi.mock("../../core/store", () => {
     },
     activeSid: "sess-1",
     projects: [],
-    notifySession: vi.fn(),
     renameSession: vi.fn(),
     updateSessionCost: vi.fn(),
     setClaudeSessionId: vi.fn(),
     setDangerousMode: vi.fn(),
-    setGitFiles: vi.fn(),
-    setGitDiff: vi.fn(),
-    setProposedCommitMessage: vi.fn(),
-    setShowGitPanel: vi.fn(),
   };
 
   const store = Object.assign(

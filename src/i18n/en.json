@@ -1,5 +1,6 @@
 {
   "common.cancel": "Cancel",
+  "common.noop": "noop2",
   "common.close": "Close",
   "common.save": "Save",
   "common.delete": "Delete",
@@ -41,6 +42,7 @@
   "session.rename": "Rename",
   "session.reset": "Reset",
   "session.ready": "Ready",
+
   "session.previousAvailable": "Previous session available",
   "session.resume": "Resume",
   "session.freshStart": "New session",
@@ -129,22 +131,6 @@
   "coach.waiting": "Waiting...",
   "coach.timeout": "Timeout — retry",
 
-  "git.header": "Git — {count} file(s) modified",
-  "git.viewDiff": "View diff",
-  "git.commitPlaceholder": "Commit message...",
-  "git.commit": "Commit",
-  "git.commitPush": "Commit + Push",
-  "git.committing": "Committing...",
-  "git.pushing": "Pushing...",
-  "git.success": "Commit successful",
-  "git.pendingLabel": "{count} file(s) to commit",
-  "git.pendingTooltip": "{count} changed file(s) — click to commit",
-
-
-  "diff.accept": "Accept",
-  "diff.reject": "Reject",
-  "diff.before": "Before",
-  "diff.after": "After",
 
   "update.available": "Update {version} available",
   "update.download": "Download",
