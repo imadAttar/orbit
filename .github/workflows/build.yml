@@ -1,4 +1,4 @@
-name: CI
+name: Build
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 25
           cache: npm
 
       - name: Install npm dependencies
@@ -65,7 +65,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 25
           cache: npm
 
       - name: Install Rust toolchain
@@ -87,6 +87,10 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install create-dmg
 
       - name: Install npm dependencies
         run: npm ci

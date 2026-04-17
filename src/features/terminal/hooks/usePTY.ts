@@ -138,6 +138,8 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
     let cancelled = false;
     const sid = sessionId;
     let lastCostUpdate = 0;
+    let promptCount = 0;
+    const sessionStartTime = Date.now();
 
     (async () => {
       try {
@@ -244,6 +246,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             const now = Date.now();
             if (now - lastPromptTrack > 2000) {
               lastPromptTrack = now;
+              promptCount++;
               trackEvent("prompt_sent");
             }
             // Auto-title: generate on first meaningful prompt
@@ -293,6 +296,19 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
       cancelled = true;
       spawnedRef.current = false;
       onSpawned(false);
+
+      // Track session engagement metrics on cleanup
+      if (promptCount > 0) {
+        const durationMs = Date.now() - sessionStartTime;
+        const cost = useStore.getState().sessionCosts[sid] ?? 0;
+        trackEvent("session_engagement", {
+          prompts: promptCount,
+          durationMs,
+          durationMin: Math.round(durationMs / 60000),
+          cost,
+          sessionType: isTerminalSession ? "terminal" : "claude",
+        });
+      }
 
       // Unlisten may still be pending (async) — handle both cases
       if (unlistenRef.current) {
