@@ -283,6 +283,8 @@ export const useStore = create<AppStore>((set, get) => ({
     const current = get();
     const currentProj = current.projects.find((p) => p.id === current.activePid);
     if (!currentProj) return;
+    // Guard: ignore if session already removed
+    if (!currentProj.sessions.some((s) => s.id === sid)) return;
     // Kill PTY BEFORE state update to prevent race with new spawn
     pty.killSilent(sid);
     clearScrollback(sid);
