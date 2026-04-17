@@ -29,13 +29,6 @@ export type EditorPref =
 
 export type { ThemeName } from "../lib/themes";
 
-export type SplitLayout = {
-  type: "horizontal" | "vertical" | "none";
-  primarySid: string;
-  secondarySid?: string;
-  ratio: number;
-};
-
 export type SessionMode = "normal" | "yolo";
 export type Language = "fr" | "en";
 

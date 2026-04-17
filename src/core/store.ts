@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Project, Session, Settings, SplitLayout } from "./types";
+import type { Project, Session, Settings } from "./types";
 import { defaultTerminal } from "../lib/platform";
 import { detectSystemLanguage } from "../i18n/i18n";
 import { loadData, debouncedSave } from "./persistence";
@@ -91,8 +91,6 @@ interface AppStore {
   sessionTools: Record<string, string>; // claudeSessionId -> last tool used
   projectSessions: Record<string, string>; // pid -> derniere session active (non persiste)
   sessionCosts: Record<string, number>;
-  splitLayout: SplitLayout;
-  focusedPane: "primary" | "secondary";
   init: () => Promise<void>;
 
   addProject: (name: string, dir: string) => void;
@@ -118,12 +116,6 @@ interface AppStore {
   setDefaultMode: (mode: import("./types").SessionMode) => void;
   setStatuslineAsked: () => void;
   updateSettings: (partial: Partial<Settings>) => void;
-
-  // Split pane
-  splitSession: (secondarySid: string) => void;
-  unsplit: () => void;
-  setFocusedPane: (pane: "primary" | "secondary") => void;
-  setSplitRatio: (ratio: number) => void;
 
 }
 
@@ -158,8 +150,6 @@ export const useStore = create<AppStore>((set, get) => ({
   sessionTools: {},
   projectSessions: {},
   sessionCosts: {},
-  splitLayout: { type: "none", primarySid: "", ratio: 0.5 },
-  focusedPane: "primary",
   init: async () => {
     const data = await loadData();
     if (data && data.projects.length > 0) {
@@ -399,32 +389,6 @@ export const useStore = create<AppStore>((set, get) => ({
       persist({ ...s, settings });
       return { settings };
     }),
-
-  // Split pane
-  splitSession: (secondarySid) =>
-    set((s) => ({
-      splitLayout: {
-        type: "vertical",
-        primarySid: s.activeSid,
-        secondarySid,
-        ratio: 0.5,
-      },
-    })),
-
-  unsplit: () =>
-    set(() => ({
-      splitLayout: { type: "none", primarySid: "", ratio: 0.5 },
-      focusedPane: "primary",
-    })),
-
-  setFocusedPane: (pane) =>
-    set(() => ({ focusedPane: pane })),
-
-  setSplitRatio: (ratio) =>
-    set((s) => ({
-      splitLayout: { ...s.splitLayout, ratio },
-    })),
-
 
 }));
 

@@ -24,6 +24,8 @@ Thumbs.db
 src-tauri/gen/
 src-tauri/WixTools/
 artifacts/
-.claude/settings.local.json
-.claude/coach-history.md
+# Claude Code config (internal tooling)
+.claude/
+CLAUDE.md
 tests/computer-use/.orbit-test-state.json
+.vite/

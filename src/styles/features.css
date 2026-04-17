@@ -1,35 +1,3 @@
-/* ═══════════════════════ SPLIT PANE ═══════════════════════ */
-
-.split-pane {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-.split-pane__panel {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.split-pane__panel--focused {
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-.split-divider {
-  width: 3px;
-  cursor: col-resize;
-  background: var(--border);
-  transition: all 150ms;
-  flex-shrink: 0;
-}
-
-.split-divider:hover {
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-}
-
-
 /* ═══════════════════════ CONTEXT BAR ═══════════════════════ */
 
 .context-bar {

@@ -1,10 +1,7 @@
 import { memo } from "react";
 import { THEMES } from "../lib/themes";
 import { useStore, selectActiveProject, selectActiveSession } from "../core/store";
-import { useT } from "../i18n/i18n";
-
 export default memo(function StatusBar() {
-  const t = useT();
 
   // Scalar selectors — stable refs, no unnecessary re-renders
   const activeProject = useStore(selectActiveProject);
@@ -12,8 +9,6 @@ export default memo(function StatusBar() {
   const activeCost = useStore((s) => s.sessionCosts[s.activeSid]);
   const theme = useStore((s) => s.settings.theme);
   const fontSize = useStore((s) => s.settings.fontSize);
-  const isSplit = useStore((s) => s.splitLayout.type !== "none");
-
   const claudeId = activeSession?.claudeSessionId;
   const sessionStateName = useStore((s) => claudeId ? s.sessionStates[claudeId] ?? null : null);
   const sessionTool = useStore((s) => claudeId ? s.sessionTools[claudeId] ?? null : null);
@@ -42,7 +37,6 @@ export default memo(function StatusBar() {
         </>
       )}
       <div className="status-bar__spacer" />
-      {isSplit && <span className="status-bar__badge">{t("statusbar.split")}</span>}
       <span>{fontSize}px</span>
       <div className="status-bar__sep" />
       <span>{THEMES[theme]?.label}</span>

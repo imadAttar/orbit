@@ -112,8 +112,6 @@ describe("App keyboard shortcuts", () => {
       },
       loaded: false,
       projectSessions: {},
-      splitLayout: { type: "none", primarySid: "", ratio: 0.5 },
-      focusedPane: "primary" as const,
     });
     mockInvoke.mockClear();
     seedProject(3);
@@ -245,48 +243,6 @@ describe("App keyboard shortcuts", () => {
       getState().setFontSize(8);
       fire("-", { metaKey: true });
       expect(getState().settings.fontSize).toBe(8);
-    });
-  });
-
-  // --- Cmd+\\: toggle split ---
-
-  describe("Cmd+\\", () => {
-    it("should create split when not in split mode", () => {
-      fire("\\", { metaKey: true });
-      expect(getState().splitLayout.type).not.toBe("none");
-    });
-
-    it("should unsplit when in split mode", () => {
-      // First create a split
-      fire("\\", { metaKey: true });
-      expect(getState().splitLayout.type).not.toBe("none");
-      // Then unsplit
-      fire("\\", { metaKey: true });
-      expect(getState().splitLayout.type).toBe("none");
-    });
-  });
-
-  // --- Cmd+] / Cmd+[: focus pane ---
-
-  describe("Cmd+] / Cmd+[", () => {
-    it("should toggle focused pane with Cmd+]", () => {
-      fire("\\", { metaKey: true }); // create split first
-      const before = getState().focusedPane;
-      fire("]", { metaKey: true });
-      expect(getState().focusedPane).not.toBe(before);
-    });
-
-    it("should toggle focused pane with Cmd+[", () => {
-      fire("\\", { metaKey: true }); // create split first
-      const before = getState().focusedPane;
-      fire("[", { metaKey: true });
-      expect(getState().focusedPane).not.toBe(before);
-    });
-
-    it("should do nothing when not in split mode", () => {
-      const before = getState().focusedPane;
-      fire("]", { metaKey: true });
-      expect(getState().focusedPane).toBe(before);
     });
   });
 
