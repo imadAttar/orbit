@@ -27,5 +27,6 @@ artifacts/
 # Claude Code config (internal tooling)
 .claude/
 CLAUDE.md
+CLAUDE.local.md
 tests/computer-use/.orbit-test-state.json
 .vite/
