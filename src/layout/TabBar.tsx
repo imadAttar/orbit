@@ -59,7 +59,7 @@ export default memo(function TabBar({ onNewProject }: Props) {
           isFlashing={flashingProjects.has(p.id)}
           isRenaming={renamingTab === p.id}
           showClose={projects.length > 1}
-          onActivate={() => { setActiveProject(p.id); trackEvent("project_switched"); if (flashingProjects.has(p.id)) { setFlashingProjects((prev) => { const next = new Set(prev); next.delete(p.id); return next; }); } }}
+          onActivate={() => { setActiveProject(p.id); trackEvent("project_switched"); if (flashingProjects.has(p.id)) { trackEvent("notification_clicked"); setFlashingProjects((prev) => { const next = new Set(prev); next.delete(p.id); return next; }); } }}
           onDoubleClick={() => setRenamingTab(p.id)}
           onRename={(v) => { renameProject(p.id, v); setRenamingTab(null); trackEvent("project_renamed"); }}
           onCancelRename={() => setRenamingTab(null)}
