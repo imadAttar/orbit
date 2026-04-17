@@ -151,6 +151,7 @@ export const useStore = create<AppStore>((set, get) => ({
     autoUpdate: true,
     defaultMode: "normal" as const,
     language: detectSystemLanguage(),
+    autoNotifications: true,
   },
   loaded: false,
   sessionStates: {},
@@ -186,6 +187,10 @@ export const useStore = create<AppStore>((set, get) => ({
         activeSid: p.sessions[0].id,
       };
       persist({ ...s, ...next });
+      // Auto-enable session hooks if setting is on
+      if (s.settings.autoNotifications) {
+        import("./api").then(({ claude }) => claude.enableSessionHooks(dir).catch(() => {}));
+      }
       return next;
     });
   },

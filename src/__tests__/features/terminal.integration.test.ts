@@ -108,7 +108,7 @@ vi.mock("../../core/store", () => {
       editor: "vscode" as const,
       analytics: true,
       statuslineAsked: false,
-      autoUpdate: true,
+      autoUpdate: true, autoNotifications: true,
       defaultMode: "normal" as const,
       language: "fr" as const,
     },

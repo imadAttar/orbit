@@ -106,7 +106,7 @@ describe("App keyboard shortcuts", () => {
         sidebarWidth: 200,
         analytics: true,
         statuslineAsked: false,
-        autoUpdate: true,
+        autoUpdate: true, autoNotifications: true,
         defaultMode: "normal" as const,
         language: "fr" as const,
       },

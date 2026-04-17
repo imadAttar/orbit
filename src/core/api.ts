@@ -69,11 +69,14 @@ export const claude = {
 
   install: () => call<string>("install_claude"),
 
-  deleteSession: (projectDir: string, sessionId: string) =>
-    call<void>("delete_claude_session", { projectDir, sessionId }),
-
   generateTitle: (prompt: string) =>
     call<string>("generate_title", { prompt }),
+
+  enableSessionHooks: (projectDir: string) =>
+    call<boolean>("enable_session_hooks", { projectDir }),
+
+  checkSessionHooks: (projectDir: string) =>
+    call<boolean>("check_session_hooks", { projectDir }),
 };
 
 

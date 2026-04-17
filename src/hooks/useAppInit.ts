@@ -23,6 +23,12 @@ export function useAppInit(dispatch: (action: any) => void) {
         autoUpdate: s.autoUpdate ? 1 : 0,
       });
       initUpdater();
+      // Auto-enable session hooks on all existing projects if setting is on
+      if (s.autoNotifications) {
+        for (const p of state.projects) {
+          claude.enableSessionHooks(p.dir).catch(() => {});
+        }
+      }
       const checkInstalled = claude.isInstalled().catch(() => true);
       const checkStatusline = !s.statuslineAsked && !isWindows
         ? statusline.has().catch(() => true)

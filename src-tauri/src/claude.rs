@@ -80,13 +80,60 @@ pub fn install_claude() -> Result<String, String> {
     }
 }
 
+/// Filter out clarification/refusal responses that shouldn't become a session title.
+fn is_valid_title(title: &str) -> bool {
+    if title.is_empty() {
+        return false;
+    }
+    // Questions are never titles
+    if title.contains('?') || title.contains('¿') {
+        return false;
+    }
+    let word_count = title.split_whitespace().count();
+    if word_count == 0 || word_count > 10 {
+        return false;
+    }
+    if title.chars().count() > 80 {
+        return false;
+    }
+    // Known patterns of clarification/refusal responses
+    let lower = title.to_lowercase();
+    const INVALID_PATTERNS: &[&str] = &[
+        "je ne comprends",
+        "je ne peux pas",
+        "pourriez-vous",
+        "pouvez-vous",
+        "clarifier",
+        "clarification",
+        "préciser",
+        "preciser",
+        "i don't understand",
+        "i cannot",
+        "i can't",
+        "could you",
+        "please clarify",
+        "please provide",
+        "unclear",
+        "what do you",
+        "what would you",
+        "titre pour",
+        "title for",
+    ];
+    for p in INVALID_PATTERNS {
+        if lower.contains(p) {
+            return false;
+        }
+    }
+    true
+}
+
 #[tauri::command]
 pub async fn generate_title(prompt: String) -> Result<String, String> {
     let claude_bin = resolve_claude_path()
         .ok_or_else(|| "Claude Code CLI non installe".to_string())?;
 
-    let system = "Generate a very short title (3-6 words, no quotes, no punctuation at the end) summarizing this user request. Reply with ONLY the title, nothing else.";
-    let full_prompt = format!("{system}\n\nUser request:\n{prompt}");
+    let system = "You are a title generator. Output ONLY a short title (3-6 words) that summarizes the user's request below. Rules: no quotes, no punctuation, no questions, no clarifications, no alternatives, no explanation. If the request is unclear, infer a plausible topic and still output a title. Never ask questions. Never refuse. Just the title.";
+    let full_prompt = format!("{system}\n\nRequest: {prompt}\n\nTitle:");
 
     let output = tauri::async_runtime::spawn_blocking(move || {
         use std::sync::mpsc;
@@ -94,11 +141,11 @@ pub async fn generate_title(prompt: String) -> Result<String, String> {
         let bin = claude_bin.clone();
         std::thread::spawn(move || {
             let result = std::process::Command::new(&bin)
-                .args(["-p", &full_prompt, "--output-format", "text"])
+                .args(["-p", &full_prompt, "--output-format", "text", "--model", "haiku"])
                 .output();
             let _ = tx.send(result);
         });
-        match rx.recv_timeout(std::time::Duration::from_secs(30)) {
+        match rx.recv_timeout(std::time::Duration::from_secs(15)) {
             Ok(result) => result.map_err(|e| format!("Erreur execution claude: {e}")),
             Err(_) => Err("Timeout generation titre".to_string()),
         }
@@ -107,11 +154,15 @@ pub async fn generate_title(prompt: String) -> Result<String, String> {
     .map_err(|e| format!("Task error: {e}"))??;
 
     if output.status.success() {
-        let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if result.is_empty() {
-            Err("Titre vide".into())
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // Take only the first line to avoid verbose responses
+        let title = raw.lines().next().unwrap_or(&raw).trim();
+        // Strip surrounding quotes/asterisks if present
+        let title = title.trim_matches(|c| c == '"' || c == '\'' || c == '*').trim();
+        if !is_valid_title(title) {
+            Err("Titre invalide".into())
         } else {
-            Ok(result)
+            Ok(title.to_string())
         }
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -119,36 +170,125 @@ pub async fn generate_title(prompt: String) -> Result<String, String> {
     }
 }
 
-/// Encode a directory path the same way Claude Code does for its projects folder.
-fn encode_project_path(dir: &str) -> String {
-    dir.chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect()
-}
-
+/// Enable session-state hooks in a project's .claude/settings.local.json.
+/// Merges with existing hooks — never duplicates or overwrites.
 #[tauri::command]
-pub fn delete_claude_session(project_dir: String, session_id: String) -> Result<(), String> {
-    if session_id.chars().any(|c| !c.is_alphanumeric() && c != '-' && c != '_') {
-        return Err("Invalid session ID".to_string());
-    }
-    let home = home_dir();
-    let encoded = encode_project_path(&project_dir);
-    let sessions_dir = std::path::Path::new(&home)
-        .join(".claude")
-        .join("projects")
-        .join(&encoded);
+pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
+    use serde_json::{json, Map, Value};
 
-    let jsonl_path = sessions_dir.join(format!("{session_id}.jsonl"));
-    if jsonl_path.exists() {
-        std::fs::remove_file(&jsonl_path)
-            .map_err(|e| format!("Failed to delete session: {e}"))?;
-        return Ok(());
+    let settings_dir = std::path::Path::new(&project_dir).join(".claude");
+    let settings_path = settings_dir.join("settings.local.json");
+
+    // Read existing settings or start fresh
+    let mut settings: Value = if settings_path.exists() {
+        let raw = std::fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Impossible de lire settings.local.json: {e}"))?;
+        serde_json::from_str(&raw)
+            .map_err(|e| format!("JSON invalide dans settings.local.json: {e}"))?
+    } else {
+        json!({})
+    };
+
+    let hook_command = "$HOME/.claude/hooks/session-state.sh";
+
+    // The 3 events we need
+    let events = ["Notification", "PreToolUse", "Stop"];
+
+    let hooks_obj = settings
+        .as_object_mut()
+        .ok_or("settings.local.json n'est pas un objet JSON")?
+        .entry("hooks")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or("hooks n'est pas un objet JSON")?;
+
+    let mut changed = false;
+
+    for event in &events {
+        let matchers = hooks_obj
+            .entry(event.to_string())
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or(format!("hooks.{event} n'est pas un tableau"))?;
+
+        // Check if our hook is already present in any matcher
+        let already_present = matchers.iter().any(|m| {
+            m.get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|arr| {
+                    arr.iter().any(|h| {
+                        h.get("command")
+                            .and_then(|c| c.as_str())
+                            .map(|c| c.contains("session-state.sh"))
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false)
+        });
+
+        if !already_present {
+            let mut hook_entry = Map::new();
+            hook_entry.insert("type".into(), json!("command"));
+            hook_entry.insert("command".into(), json!(hook_command));
+            hook_entry.insert("timeout".into(), json!(3000));
+
+            let mut matcher = Map::new();
+            matcher.insert("matcher".into(), json!(""));
+            matcher.insert("hooks".into(), json!([hook_entry]));
+
+            matchers.push(json!(matcher));
+            changed = true;
+        }
     }
 
-    let dir_path = sessions_dir.join(&session_id);
-    if dir_path.exists() {
-        std::fs::remove_dir_all(&dir_path)
-            .map_err(|e| format!("Failed to delete session: {e}"))?;
+    if changed {
+        std::fs::create_dir_all(&settings_dir)
+            .map_err(|e| format!("Impossible de creer .claude/: {e}"))?;
+        let formatted = serde_json::to_string_pretty(&settings)
+            .map_err(|e| format!("Erreur serialisation JSON: {e}"))?;
+        std::fs::write(&settings_path, formatted)
+            .map_err(|e| format!("Impossible d'ecrire settings.local.json: {e}"))?;
     }
-    Ok(())
+
+    Ok(changed)
 }
+
+/// Check if session-state hooks are already enabled in a project.
+#[tauri::command]
+pub fn check_session_hooks(project_dir: String) -> bool {
+    let settings_path = std::path::Path::new(&project_dir)
+        .join(".claude")
+        .join("settings.local.json");
+
+    let Ok(raw) = std::fs::read_to_string(&settings_path) else {
+        return false;
+    };
+    let Ok(settings) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+
+    let events = ["Notification", "PreToolUse", "Stop"];
+    events.iter().all(|event| {
+        settings
+            .get("hooks")
+            .and_then(|h| h.get(*event))
+            .and_then(|m| m.as_array())
+            .map(|arr| {
+                arr.iter().any(|m| {
+                    m.get("hooks")
+                        .and_then(|h| h.as_array())
+                        .map(|hs| {
+                            hs.iter().any(|h| {
+                                h.get("command")
+                                    .and_then(|c| c.as_str())
+                                    .map(|c| c.contains("session-state.sh"))
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    })
+}
+

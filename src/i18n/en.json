@@ -49,6 +49,8 @@
   "prefs.defaultModeHint": "New sessions start with this mode — Normal asks for permissions, Yolo skips them",
   "prefs.modeNormal": "Normal",
   "prefs.modeYolo": "Yolo",
+  "prefs.autoNotifications": "Session notifications",
+  "prefs.autoNotificationsHint": "Enable status indicators (working/idle/waiting) on each project by configuring Claude Code hooks",
   "prefs.language": "Language",
   "prefs.sectionAppearance": "Appearance",
   "prefs.sectionSession": "Session",
