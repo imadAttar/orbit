@@ -92,13 +92,11 @@
   text-transform: lowercase;
 }
 .status-bar__state--working {
-  color: var(--yellow, #f9e2af);
+  color: var(--yellow);
 }
-.status-bar__state--idle {
-  color: var(--green, #a6e3a1);
-}
+.status-bar__state--idle,
 .status-bar__state--waiting {
-  color: var(--accent);
+  color: var(--text-dim);
 }
 
 .status-bar__cost {
@@ -117,32 +115,5 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-}
-
-.status-bar__git-btn {
-  background: transparent;
-  border: 1px solid var(--green);
-  color: var(--green);
-  padding: 1px 8px;
-  border-radius: 4px;
-  font-family: var(--font-chrome);
-  font-size: 10px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 150ms;
-}
-
-.status-bar__git-btn:hover {
-  background: var(--green);
-  color: var(--bg);
-}
-
-.status-bar__git-btn--pulse {
-  animation: git-pulse 2s ease-in-out infinite;
-}
-
-@keyframes git-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 

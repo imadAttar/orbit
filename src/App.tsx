@@ -1,6 +1,5 @@
 import { useReducer, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
 import { useStore, selectActiveProject, selectActiveSession } from "./core/store";
-import { pty } from "./core/api";
 import { trackEvent } from "./lib/analytics";
 import { useT } from "./i18n/i18n";
 import TerminalView from "./features/terminal/Terminal";
@@ -18,12 +17,8 @@ import { useAppInit } from "./hooks/useAppInit";
 import { useThemeSync } from "./hooks/useThemeSync";
 
 // Lazy-loaded heavy components (code-split)
-const CommandPalette = lazy(() => import("./features/CommandPalette"));
-const PromptCoach = lazy(() => import("./features/PromptCoach"));
 const NewProjectModal = lazy(() => import("./modals/NewProjectModal"));
 const PreferencesModal = lazy(() => import("./modals/PreferencesModal"));
-
-// --- Helpers ---
 
 // --- UI State ---
 
@@ -35,8 +30,6 @@ interface UIState {
   showStatuslinePrompt: boolean;
   showInstallClaude: boolean;
   contextMenu: { sid: string; x: number; y: number } | null;
-  showCommandPalette: boolean;
-  showPromptCoach: boolean;
   updateStatus: UpdateStatus;
   prevActivePid: string;
 }
@@ -44,14 +37,12 @@ interface UIState {
 type UIAction =
   | { type: "set"; field: keyof UIState; value: UIState[keyof UIState] }
   | { type: "toggleSearch" }
-  | { type: "toggleCommandPalette" }
   | { type: "resetForProject"; activePid: string };
 
 function uiReducer(state: UIState, action: UIAction): UIState {
   switch (action.type) {
     case "set": return { ...state, [action.field]: action.value };
     case "toggleSearch": return { ...state, searchOpen: !state.searchOpen };
-    case "toggleCommandPalette": return { ...state, showCommandPalette: !state.showCommandPalette };
     case "resetForProject": return { ...state, prevActivePid: action.activePid, contextMenu: null, confirmDeleteSession: null };
     default: return state;
   }
@@ -70,18 +61,19 @@ export default function App() {
   // Stable selectors — return same ref if project/session unchanged
   const activeProject = useStore(selectActiveProject);
   const activeSession = useStore(selectActiveSession);
-  const allProjects = useStore((s) => s.projects);
   // Actions (stable refs — zustand actions never change)
+  const projects = useStore((s) => s.projects);
   const removeSession = useStore((s) => s.removeSession);
   const setSidebarWidth = useStore((s) => s.setSidebarWidth);
 
   const [ui, dispatch] = useReducer(uiReducer, {
     showNewProject: false, showPreferences: false, confirmDeleteSession: null,
     searchOpen: false, showStatuslinePrompt: false, showInstallClaude: false,
-    contextMenu: null, showCommandPalette: false, showPromptCoach: false,
+    contextMenu: null,
     updateStatus: { state: "idle" } as UpdateStatus, prevActivePid: "",
   });
   const resizingRef = useRef(false);
+  const mountedSidsRef = useRef(new Set<string>());
 
   useAppInit(dispatch);
   useThemeSync();
@@ -94,45 +86,21 @@ export default function App() {
 
   const handleResizeStart = useCallback(() => {
     resizingRef.current = true;
-    const onMove = (e: MouseEvent) => { if (!resizingRef.current) return; setSidebarWidth(Math.min(320, Math.max(150, e.clientX))); };
-    const onUp = () => { resizingRef.current = false; document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+    let rafId = 0;
+    const onMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => setSidebarWidth(Math.min(320, Math.max(150, e.clientX))));
+    };
+    const onUp = () => { resizingRef.current = false; cancelAnimationFrame(rafId); document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   }, [setSidebarWidth]);
-
-
-  const openSkillSession = useCallback(async (name: string, command: string) => {
-    const store = useStore.getState();
-    const proj = store.projects.find((p) => p.id === store.activePid);
-    const existing = proj?.sessions.find((s) => s.name === name);
-    const targetSid = existing ? existing.id : (() => { store.addSession(name); return useStore.getState().activeSid; })();
-    if (existing) store.setActiveSession(existing.id);
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try { await pty.write(targetSid, command + "\r"); break; }
-      catch (err) {
-        if (attempt === 9) import("./lib/logger").then(({ logger }) => logger.warn("app", `skill session write failed after 10 retries: ${err}`));
-        else await new Promise((r) => setTimeout(r, 300));
-      }
-    }
-    trackEvent("skill_session_opened", { skill: command });
-  }, []);
-
-  const sendPromptToActiveSession = useCallback(async (prompt: string) => {
-    try { await pty.write(activeSid, prompt + "\r"); }
-    catch (err) { import("./lib/logger").then(({ logger }) => logger.warn("app", `write_pty failed: ${err}`)); }
-  }, [activeSid]);
-
-  const openPromptCoach = useCallback(() => { dispatch({ type: "set", field: "showPromptCoach", value: true }); trackEvent("prompt_coach_opened"); }, []);
 
   const contextMenuStyle = useMemo(
     () => ui.contextMenu ? { left: ui.contextMenu.x, top: ui.contextMenu.y } : undefined,
     [ui.contextMenu]
   );
-
-  const sendFromCoach = useCallback(async (prompt: string) => {
-    try { await pty.write(activeSid, "\x15" + prompt); }
-    catch (err) { import("./lib/logger").then(({ logger }) => logger.warn("app", `write_pty failed: ${err}`)); }
-  }, [activeSid]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -141,7 +109,6 @@ export default function App() {
         confirmDeleteSession: (sid) => { trackEvent("shortcut_used", { key: "close_session" }); dispatch({ type: "set", field: "confirmDeleteSession", value: sid }); },
         toggleSearch: () => { trackEvent("shortcut_used", { key: "search" }); dispatch({ type: "toggleSearch" }); },
         showPreferences: () => { trackEvent("shortcut_used", { key: "preferences" }); dispatch({ type: "set", field: "showPreferences", value: true }); },
-        toggleCommandPalette: () => { trackEvent("shortcut_used", { key: "command_palette" }); dispatch({ type: "toggleCommandPalette" }); },
       });
     };
     window.addEventListener("keydown", handler);
@@ -166,18 +133,25 @@ export default function App() {
     );
   }
 
+  // Track which sessions have been visited — keep them mounted across all projects
+  // Clean up only truly deleted sessions (not in ANY project)
+  const allSids = new Set(projects.flatMap((p) => p.sessions.map((s) => s.id)));
+  for (const sid of mountedSidsRef.current) {
+    if (!allSids.has(sid)) mountedSidsRef.current.delete(sid);
+  }
+  mountedSidsRef.current.add(activeSid);
+  const mountedSids = mountedSidsRef.current;
+
   const isSplit = splitLayout.type !== "none" && splitLayout.secondarySid;
 
   return (
     <div className="app">
       <TabBar
-        onNewProject={() => dispatch({ type: "set", field: "showNewProject", value: true })}
-        onCommandPalette={() => dispatch({ type: "set", field: "showCommandPalette", value: true })} />
+        onNewProject={() => dispatch({ type: "set", field: "showNewProject", value: true })} />
 
       <div className="main">
         <Sidebar
-          onContextMenu={(sid, x, y) => dispatch({ type: "set", field: "contextMenu", value: { sid, x, y } })}
-          onOpenSkillSession={openSkillSession} onOpenPromptCoach={openPromptCoach} onSendToSession={sendPromptToActiveSession} />
+          onContextMenu={(sid, x, y) => dispatch({ type: "set", field: "contextMenu", value: { sid, x, y } })} />
         <div className="resize-handle" role="separator" aria-orientation="vertical" onMouseDown={handleResizeStart} />
         <div className="terminal-area">
           <div className="chat__breadcrumb">
@@ -192,17 +166,15 @@ export default function App() {
                     projectDir={activeProject.dir} ratio={splitLayout.ratio} searchOpen={ui.searchOpen}
                     onSearchClose={() => dispatch({ type: "set", field: "searchOpen", value: false })} />
                 )}
-                {!isSplit && allProjects.flatMap((p) =>
-                  p.sessions.map((s) => (
-                    <TerminalView key={s.id} sessionId={s.id} projectDir={p.dir}
-                      active={p.id === activePid && s.id === activeSid}
-                      visible={p.id === activePid && s.id === activeSid}
-                      searchOpen={p.id === activePid && s.id === activeSid && ui.searchOpen}
-                      onSearchClose={handleSearchClose}
-                      sessionType={s.type ?? "claude"} />
-                  ))
-                )}
-                {ui.showPromptCoach && <Suspense fallback={null}><PromptCoach onSend={sendFromCoach} onClose={() => dispatch({ type: "set", field: "showPromptCoach", value: false })} /></Suspense>}
+                {!isSplit && projects.flatMap((p) =>
+                    p.sessions.filter((s) => mountedSids.has(s.id)).map((s) => (
+                      <TerminalView key={s.id} sessionId={s.id} projectDir={p.dir}
+                        active={s.id === activeSid}
+                        visible={s.id === activeSid}
+                        searchOpen={s.id === activeSid && ui.searchOpen}
+                        onSearchClose={handleSearchClose}
+                        sessionType={s.type ?? "claude"} />
+                    )))}
               </div>
             </div>
           </ErrorBoundary>
@@ -215,7 +187,6 @@ export default function App() {
       <ErrorBoundary>
         {ui.showNewProject && <Suspense fallback={null}><NewProjectModal onClose={() => dispatch({ type: "set", field: "showNewProject", value: false })} /></Suspense>}
         {ui.showPreferences && <Suspense fallback={null}><PreferencesModal onClose={() => dispatch({ type: "set", field: "showPreferences", value: false })} /></Suspense>}
-        {ui.showCommandPalette && <Suspense fallback={null}><CommandPalette onClose={() => dispatch({ type: "set", field: "showCommandPalette", value: false })} onSelectPrompt={sendPromptToActiveSession} /></Suspense>}
         {ui.contextMenu && (
           <div className="context-menu-overlay" role="presentation" onClick={() => dispatch({ type: "set", field: "contextMenu", value: null })} onKeyDown={(e) => { if (e.key === "Escape") dispatch({ type: "set", field: "contextMenu", value: null }); }}>
             <div className="context-menu" role="menu" style={contextMenuStyle} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>

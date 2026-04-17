@@ -1,6 +1,5 @@
-mod bookmarks;
+mod watcher;
 mod claude;
-mod git;
 mod logging;
 mod pty;
 mod statusline;
@@ -109,10 +108,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             claude::check_claude_installed,
             claude::install_claude,
-            claude::improve_prompt,
-            claude::list_claude_sessions,
-            claude::get_claude_session_dir,
             claude::delete_claude_session,
+            claude::generate_title,
             statusline::has_statusline,
             statusline::create_statusline,
             pty::spawn_pty,
@@ -124,28 +121,20 @@ pub fn run() {
             terminal::save_scrollback,
             terminal::load_scrollback,
             terminal::notify_done,
-            git::git_status,
-            git::git_diff,
-            git::git_diff_file,
-            git::git_commit,
-            git::git_push,
             terminal::save_temp_image,
             terminal::create_directory,
             terminal::read_orbit_file,
             terminal::write_orbit_file,
             terminal::collect_crash_report,
             terminal::log_frontend,
-            bookmarks::scan_project_skills,
-            bookmarks::score_bookmarks,
-            bookmarks::install_orbit_hooks,
         ])
         .setup(|app| {
             logging::init();
             tracing::info!("Orbit starting");
             let handle = app.handle().clone();
             std::thread::spawn(move || {
-                if let Err(e) = bookmarks::setup_watcher(handle) {
-                    tracing::error!("bookmarks watcher error: {e}");
+                if let Err(e) = watcher::setup_watcher(handle) {
+                    tracing::error!("watcher error: {e}");
                 }
             });
             Ok(())

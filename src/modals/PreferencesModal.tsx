@@ -1,16 +1,15 @@
 import { useReducer, useEffect } from "react";
-import type { TerminalPref, ThemeName, Language, SessionMode } from "../core/types";
+import type { ThemeName, Language, SessionMode } from "../core/types";
 import { useStore } from "../core/store";
 import { THEMES, applyChrome } from "../lib/themes";
 import { trackEvent, setAnalyticsEnabled } from "../lib/analytics";
 import { useT } from "../i18n/i18n";
-import { modLabel, modSymbol, terminalOptions } from "../lib/platform";
+import { modLabel } from "../lib/platform";
 import FocusTrap from "../shared/FocusTrap";
 
 type Tab = "appearance" | "session" | "privacy" | "shortcuts";
 
 interface PrefsState {
-  terminal: TerminalPref;
   theme: ThemeName;
   fontSize: number;
   analytics: boolean;
@@ -35,16 +34,9 @@ function prefsReducer(state: PrefsState, action: PrefsAction): PrefsState {
 export default function PreferencesModal({ onClose }: { onClose: () => void }) {
   const t = useT();
   const settings = useStore((s) => s.settings);
-  const setTerminal = useStore((s) => s.setTerminal);
-  const setTheme = useStore((s) => s.setTheme);
-  const setFontSize = useStore((s) => s.setFontSize);
-  const setAnalytics = useStore((s) => s.setAnalytics);
-  const setAutoUpdate = useStore((s) => s.setAutoUpdate);
-  const setLanguage = useStore((s) => s.setLanguage);
-  const setDefaultMode = useStore((s) => s.setDefaultMode);
+  const updateSettings = useStore((s) => s.updateSettings);
 
   const [prefs, dispatch] = useReducer(prefsReducer, {
-    terminal: settings.terminal,
     theme: settings.theme,
     fontSize: settings.fontSize,
     analytics: settings.analytics,
@@ -60,19 +52,20 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
   }, [prefs.theme]);
 
   const handleSave = () => {
-    setTerminal(prefs.terminal);
-    setTheme(prefs.theme);
-    setFontSize(prefs.fontSize);
-    setAnalytics(prefs.analytics);
-    setAutoUpdate(prefs.autoUpdate);
-    setLanguage(prefs.language);
-    setDefaultMode(prefs.defaultMode);
+    updateSettings({
+      theme: prefs.theme,
+      fontSize: Math.max(8, Math.min(20, prefs.fontSize)),
+      analytics: prefs.analytics,
+      autoUpdate: prefs.autoUpdate,
+      language: prefs.language,
+      defaultMode: prefs.defaultMode,
+    });
     setAnalyticsEnabled(prefs.analytics);
     if (prefs.theme !== settings.theme) trackEvent("theme_changed", { from: settings.theme, to: prefs.theme });
     if (prefs.fontSize !== settings.fontSize) trackEvent("font_size_changed", { from: settings.fontSize, to: prefs.fontSize });
     if (prefs.language !== settings.language) trackEvent("language_changed", { from: settings.language, to: prefs.language });
     if (prefs.defaultMode !== settings.defaultMode) trackEvent("default_mode_changed", { from: settings.defaultMode, to: prefs.defaultMode });
-    trackEvent("preferences_saved", { theme: prefs.theme, fontSize: prefs.fontSize, terminal: prefs.terminal, language: prefs.language, editor: useStore.getState().settings.editor, defaultMode: prefs.defaultMode });
+    trackEvent("preferences_saved", { theme: prefs.theme, fontSize: prefs.fontSize, language: prefs.language, defaultMode: prefs.defaultMode });
     onClose();
   };
 
@@ -145,15 +138,6 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
                 </select>
                 <div className="modal__hint">{t("prefs.defaultModeHint")}</div>
               </label>
-              <label className="modal__label">
-                {t("prefs.externalTerminal")}
-                <select className="modal__select" value={prefs.terminal} onChange={(e) => dispatch({ type: "set", field: "terminal", value: e.target.value })}>
-                  {terminalOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-                <div className="modal__hint">{t("prefs.externalTerminalHint", { shortcut: `${modSymbol}T` })}</div>
-              </label>
             </div>
           )}
 
@@ -186,7 +170,6 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
               <div className="shortcuts-grid__row"><kbd>Ctrl</kbd><kbd>1-9</kbd><span>{t("shortcuts.goToSession")}</span></div>
               <div className="shortcuts-grid__section">{t("shortcuts.navigation")}</div>
               <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>F</kbd><span>{t("shortcuts.searchTerminal")}</span></div>
-              <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>P</kbd><span>{t("shortcuts.bookmarks")}</span></div>
               <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>,</kbd><span>{t("shortcuts.preferences")}</span></div>
               <div className="shortcuts-grid__section">{t("shortcuts.split")}</div>
               <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>\</kbd><span>{t("shortcuts.splitToggle")}</span></div>
@@ -195,7 +178,6 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
               <div className="shortcuts-grid__section">{t("shortcuts.misc")}</div>
               <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>+</kbd><span>{t("shortcuts.zoomIn")}</span></div>
               <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>-</kbd><span>{t("shortcuts.zoomOut")}</span></div>
-              <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>T</kbd><span>{t("shortcuts.externalTerminal")}</span></div>
               <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>Shift</kbd><kbd>N</kbd><span>{t("shortcuts.newProject")}</span></div>
             </div>
           )}

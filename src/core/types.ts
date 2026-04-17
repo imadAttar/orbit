@@ -13,7 +13,6 @@ export type Project = {
   name: string;
   dir: string;
   sessions: Session[];
-  bookmarks?: Bookmark[];
 };
 
 export type TerminalPref =
@@ -29,13 +28,6 @@ export type EditorPref =
   | "default";
 
 export type { ThemeName } from "../lib/themes";
-
-export type Bookmark = {
-  id: string;
-  name: string;
-  prompt: string;
-  description?: string;
-};
 
 export type SplitLayout = {
   type: "horizontal" | "vertical" | "none";

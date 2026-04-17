@@ -1,39 +1,42 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo, useEffect, useCallback, memo } from "react";
 import type { Session } from "../core/types";
 import { useStore, selectActiveProject } from "../core/store";
 import { trackEvent } from "../lib/analytics";
 import { useT } from "../i18n/i18n";
 import InlineRename from "../shared/InlineRename";
-import { useBookmarkFilter } from "../hooks/useBookmarkFilter";
 
 interface Props {
   onContextMenu: (sid: string, x: number, y: number) => void;
-  onOpenSkillSession: (name: string, command: string) => void;
-  onOpenPromptCoach: () => void;
-  onSendToSession: (prompt: string) => void;
 }
 
-export default function Sidebar({
-  onContextMenu,
-  onOpenSkillSession,
-  onOpenPromptCoach,
-  onSendToSession,
-}: Props) {
+export default function Sidebar({ onContextMenu }: Props) {
   const t = useT();
 
-  // Read directly from store instead of props
   const activeProject = useStore(selectActiveProject);
   const activeSid = useStore((s) => s.activeSid);
-  const sessionCosts = useStore((s) => s.sessionCosts);
   const sidebarWidth = useStore((s) => s.settings.sidebarWidth);
   const setActiveSession = useStore((s) => s.setActiveSession);
   const renameSession = useStore((s) => s.renameSession);
   const addSession = useStore((s) => s.addSession);
   const removeSession = useStore((s) => s.removeSession);
 
-  const { bookmarks, scores, maxScore } = useBookmarkFilter();
   const [renamingSession, setRenamingSession] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [flashingSessions, setFlashingSessions] = useState<Set<string>>(new Set());
+  const flashingRef = useRef(flashingSessions);
+  flashingRef.current = flashingSessions;
+
+  // Listen for session completion — persistent until user clicks the session
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { sessionId } = (e as CustomEvent).detail;
+      if (!sessionId) return;
+      if (sessionId === useStore.getState().activeSid) return;
+      setFlashingSessions((prev) => new Set(prev).add(sessionId));
+    };
+    window.addEventListener("session-completed", handler);
+    return () => window.removeEventListener("session-completed", handler);
+  }, []);
 
   // Listen for rename-session event from context menu
   useEffect(() => {
@@ -47,133 +50,179 @@ export default function Sidebar({
 
   const sidebarStyle = useMemo(() => ({ width: sidebarWidth }), [sidebarWidth]);
 
-  const bookmarkStyles = useMemo(() => {
-    const map: Record<string, React.CSSProperties | undefined> = {};
-    for (const b of bookmarks) {
-      const score = scores[b.prompt] ?? 0;
-      if (score > 0) {
-        const intensity = 0.08 + (score / maxScore) * 0.2;
-        map[b.id] = { background: `rgba(var(--accent-rgb), ${intensity})` };
-      }
+  const claudeSessions = useMemo(() => activeProject?.sessions.filter((s) => s.type !== "terminal") ?? [], [activeProject?.sessions]);
+  const terminalSessions = useMemo(() => activeProject?.sessions.filter((s) => s.type === "terminal") ?? [], [activeProject?.sessions]);
+  const allSessions = activeProject?.sessions ?? [];
+  const canDelete = allSessions.length > 1;
+
+  const handleSessionClick = useCallback((sid: string) => {
+    if (sid !== useStore.getState().activeSid) { setActiveSession(sid); trackEvent("session_switched"); }
+    if (flashingRef.current.has(sid)) { setFlashingSessions((prev) => { const next = new Set(prev); next.delete(sid); return next; }); }
+  }, [setActiveSession]);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetSid: string) => {
+    e.preventDefault();
+    setDragOverId(null);
+    const fromId = e.dataTransfer.getData("text/plain");
+    if (fromId && fromId !== targetSid) {
+      useStore.getState().reorderSession(fromId, targetSid);
+      trackEvent("session_reordered");
     }
-    return map;
-  }, [bookmarks, scores, maxScore]);
+  }, []);
 
   if (!activeProject?.sessions) return null;
 
   return (
     <div className="sidebar" style={sidebarStyle} data-testid="sidebar">
-      <div className="sidebar__header">{t("session.sessions")}</div>
-      <div className="sidebar__sessions">
-        {activeProject.sessions.map((s: Session, idx: number) => (
-          <div
-            key={s.id}
-            role="button"
-            tabIndex={0}
-            data-testid="session-item"
-            className={`session-item ${s.id === activeSid ? "session-item--active" : ""} ${dragOverId === s.id ? "session-item--drag-over" : ""}`}
-            draggable
-            onDragStart={(e) => e.dataTransfer.setData("text/plain", s.id)}
-            onDragOver={(e) => { e.preventDefault(); setDragOverId(s.id); }}
-            onDragLeave={() => setDragOverId(null)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOverId(null);
-              const fromId = e.dataTransfer.getData("text/plain");
-              if (fromId && fromId !== s.id) {
-                useStore.getState().reorderSession(fromId, s.id);
-                trackEvent("session_reordered");
-              }
-            }}
-            onClick={() => { if (s.id !== activeSid) { setActiveSession(s.id); trackEvent("session_switched"); } }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveSession(s.id); } }}
-            onDoubleClick={() => setRenamingSession(s.id)}
-            onContextMenu={(e) => { e.preventDefault(); onContextMenu(s.id, e.clientX, e.clientY); }}
-          >
-            <div className={`session-item__dot ${s.type === "terminal" ? "session-item__dot--terminal" : "session-item__dot--has-messages"}`} />
-            {renamingSession === s.id ? (
-              <InlineRename
-                value={s.name}
-                onConfirm={(v) => { renameSession(s.id, v); setRenamingSession(null); trackEvent("session_renamed"); }}
-                onCancel={() => setRenamingSession(null)}
-              />
-            ) : (
-              <>
-                <span className="session-item__name">{s.name}</span>
-                <div className="session-item__meta">
-                  {sessionCosts[s.id] !== undefined && (
-                    <span className="session-item__cost">${sessionCosts[s.id].toFixed(2)}</span>
-                  )}
-                  {idx < 9 && <span className="session-item__index">{idx + 1}</span>}
-                  {activeProject.sessions.length > 1 && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="session-item__close"
-                      onClick={(e) => { e.stopPropagation(); removeSession(s.id); trackEvent("session_closed"); }}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); removeSession(s.id); } }}
-                    >
-                      &times;
-                    </span>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-        <div className="sidebar__add-row">
-          <button data-testid="add-claude-session" className="sidebar__add-btn sidebar__add-btn--claude" onClick={() => { addSession(); trackEvent("session_created"); }} aria-label={t("session.addClaudeSession")}>
-            {t("session.addClaudeSession")}
-          </button>
-          <button className="sidebar__add-btn sidebar__add-btn--terminal" onClick={() => { addSession(undefined, "terminal"); trackEvent("terminal_session_created"); }} aria-label={t("session.addTerminalSession")}>
-            {t("session.addTerminalSession")}
-          </button>
+      <div className="sidebar__group">
+        <div className="sidebar__group-header">
+          <span>{t("session.sessions")}</span>
+          <button data-testid="add-claude-session" className="sidebar__group-add" onClick={() => { addSession(); trackEvent("session_created"); }} aria-label={t("session.addClaudeSession")}>+</button>
         </div>
-      </div>
-      {bookmarks.length > 0 && (
-        <div className="sidebar__skills sidebar__skills--project">
-          <div className="sidebar__skills-label">{t("palette.projects")}</div>
-          {bookmarks.map((b) => (
-              <button
-                key={b.id}
-                className={`sidebar__skill-btn sidebar__skill-btn--project ${bookmarkStyles[b.id] ? "sidebar__skill-btn--scored" : ""}`}
-                style={bookmarkStyles[b.id]}
-                onClick={() => onSendToSession(b.prompt)}
-              >
-                {b.name}
-                {b.description && <span className="sidebar__skill-tooltip">{b.description}</span>}
-              </button>
+        <div className="sidebar__sessions">
+          {claudeSessions.map((s, idx) => (
+            <SessionItem
+              key={s.id}
+              session={s}
+              idx={idx}
+              isActive={s.id === activeSid}
+              isDragOver={dragOverId === s.id}
+              isFlashing={flashingSessions.has(s.id)}
+              isRenaming={renamingSession === s.id}
+              canDelete={canDelete}
+              onClick={handleSessionClick}
+              onDragOver={setDragOverId}
+              onDrop={handleDrop}
+              onRename={renameSession}
+              onRenameStart={setRenamingSession}
+              onRenameCancel={() => setRenamingSession(null)}
+              onClose={removeSession}
+              onContextMenu={onContextMenu}
+            />
           ))}
         </div>
-      )}
-      <div className="sidebar__skills">
-        <div className="sidebar__skills-group">
-          <div className="sidebar__skills-label">{t("skill.sectionDaily")}</div>
-          <div className="sidebar__skills-row">
-            <button className="sidebar__skill-btn" onClick={() => onOpenSkillSession(t("skill.standup"), "/standup")}>
-              {t("skill.standup")}
-              <span className="sidebar__skill-tooltip">{t("skill.standupDesc")}</span>
-            </button>
-            <button className="sidebar__skill-btn sidebar__skill-btn--accent" onClick={onOpenPromptCoach}>
-              {t("skill.improvePrompt")}
-              <span className="sidebar__skill-tooltip">{t("skill.improvePromptDesc")}</span>
-            </button>
-          </div>
-        </div>
-        <div className="sidebar__skills-group">
-          <div className="sidebar__skills-label">{t("skill.sectionSetup")}</div>
-          <div className="sidebar__skills-row">
-            <button className="sidebar__skill-btn sidebar__skill-btn--setup" onClick={() => onOpenSkillSession(t("skill.configureProject"), "/bootstrap")}>
-              {t("skill.configureProject")}
-              <span className="sidebar__skill-tooltip">{t("skill.configureProjectDesc")}</span>
-            </button>
-            <button className="sidebar__skill-btn sidebar__skill-btn--setup" onClick={() => onOpenSkillSession(t("skill.optimizeAssistant"), "/coach")}>
-              {t("skill.optimizeAssistant")}
-              <span className="sidebar__skill-tooltip">{t("skill.optimizeAssistantDesc")}</span>
-            </button>
-          </div>
-        </div>
       </div>
+      {terminalSessions.length > 0 && (
+        <div className="sidebar__group">
+          <div className="sidebar__group-header">
+            <span>Terminal</span>
+            <button className="sidebar__group-add sidebar__group-add--terminal" onClick={() => { addSession(undefined, "terminal"); trackEvent("terminal_session_created"); }} aria-label={t("session.addTerminalSession")}>+</button>
+          </div>
+          <div className="sidebar__sessions">
+            {terminalSessions.map((s, idx) => (
+              <SessionItem
+                key={s.id}
+                session={s}
+                idx={claudeSessions.length + idx}
+                isActive={s.id === activeSid}
+                isDragOver={dragOverId === s.id}
+                isFlashing={flashingSessions.has(s.id)}
+                isRenaming={renamingSession === s.id}
+                canDelete={canDelete}
+                onClick={handleSessionClick}
+                onDragOver={setDragOverId}
+                onDrop={handleDrop}
+                onRename={renameSession}
+                onRenameStart={setRenamingSession}
+                onRenameCancel={() => setRenamingSession(null)}
+                onClose={removeSession}
+                onContextMenu={onContextMenu}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {terminalSessions.length === 0 && (
+        <div className="sidebar__group-header">
+          <span>Terminal</span>
+          <button className="sidebar__group-add sidebar__group-add--terminal" onClick={() => { addSession(undefined, "terminal"); trackEvent("terminal_session_created"); }} aria-label={t("session.addTerminalSession")}>+</button>
+        </div>
+      )}
     </div>
   );
 }
+
+// --- SessionItem: memo-ised, with targeted store selectors ---
+
+interface SessionItemProps {
+  session: Session;
+  idx: number;
+  isActive: boolean;
+  isDragOver: boolean;
+  isFlashing: boolean;
+  isRenaming: boolean;
+  canDelete: boolean;
+  onClick: (sid: string) => void;
+  onDragOver: (sid: string | null) => void;
+  onDrop: (e: React.DragEvent, sid: string) => void;
+  onRename: (sid: string, name: string) => void;
+  onRenameStart: (sid: string) => void;
+  onRenameCancel: () => void;
+  onClose: (sid: string) => void;
+  onContextMenu: (sid: string, x: number, y: number) => void;
+}
+
+const SessionItem = memo(function SessionItem({
+  session, idx, isActive, isDragOver, isFlashing, isRenaming, canDelete,
+  onClick, onDragOver, onDrop, onRename, onRenameStart, onRenameCancel, onClose, onContextMenu,
+}: SessionItemProps) {
+  // Targeted selectors — only re-render when THIS session's state/cost changes
+  const dotClass = useStore((s) => {
+    if (session.type === "terminal") return "";
+    if (isFlashing) return "session-item__dot--unseen";
+    if (!session.claudeSessionId) return "";
+    const state = s.sessionStates[session.claudeSessionId];
+    if (state === "working") return "session-item__dot--working";
+    return "";
+  });
+  const cost = useStore((s) => s.sessionCosts[session.id]);
+
+  return (
+    <div
+      key={session.id}
+      role="button"
+      tabIndex={0}
+      data-testid="session-item"
+      className={`session-item ${isActive ? "session-item--active" : ""} ${isDragOver ? "session-item--drag-over" : ""}`}
+      draggable
+      onDragStart={(e) => e.dataTransfer.setData("text/plain", session.id)}
+      onDragOver={(e) => { e.preventDefault(); onDragOver(session.id); }}
+      onDragLeave={() => onDragOver(null)}
+      onDrop={(e) => onDrop(e, session.id)}
+      onClick={() => onClick(session.id)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(session.id); } }}
+      onDoubleClick={() => onRenameStart(session.id)}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(session.id, e.clientX, e.clientY); }}
+    >
+      <div className={`session-item__dot ${dotClass}`} />
+      {isRenaming ? (
+        <InlineRename
+          value={session.name}
+          onConfirm={(v) => { onRename(session.id, v); onRenameCancel(); trackEvent("session_renamed"); }}
+          onCancel={onRenameCancel}
+        />
+      ) : (
+        <>
+          <span className="session-item__name">{session.name}</span>
+          <div className="session-item__meta">
+            {cost !== undefined && (
+              <span className="session-item__cost">${cost.toFixed(2)}</span>
+            )}
+            {idx < 9 && <span className="session-item__index">{idx + 1}</span>}
+            {canDelete && (
+              <span
+                role="button"
+                tabIndex={0}
+                className="session-item__close"
+                onClick={(e) => { e.stopPropagation(); onClose(session.id); trackEvent("session_closed"); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onClose(session.id); } }}
+              >
+                &times;
+              </span>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+});

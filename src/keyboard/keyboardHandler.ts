@@ -10,7 +10,6 @@ export interface KeyboardCallbacks {
   confirmDeleteSession: (sid: string) => void;
   toggleSearch: () => void;
   showPreferences: () => void;
-  toggleCommandPalette: () => void;
 }
 
 export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCallbacks) {
@@ -36,9 +35,6 @@ export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCall
   } else if (mod && e.key === ",") {
     e.preventDefault();
     callbacks.showPreferences();
-  } else if (mod && e.key === "p") {
-    e.preventDefault();
-    callbacks.toggleCommandPalette();
   } else if (mod && (e.key === "=" || e.key === "+")) {
     e.preventDefault();
     if (state.settings.fontSize < 20) state.setFontSize(state.settings.fontSize + 1);
@@ -60,12 +56,7 @@ export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCall
         }
       }
     }
-  } else if (mod && e.key === "]") {
-    e.preventDefault();
-    if (state.splitLayout.type !== "none") {
-      state.setFocusedPane(state.focusedPane === "primary" ? "secondary" : "primary");
-    }
-  } else if (mod && e.key === "[") {
+  } else if (mod && (e.key === "]" || e.key === "[")) {
     e.preventDefault();
     if (state.splitLayout.type !== "none") {
       state.setFocusedPane(state.focusedPane === "primary" ? "secondary" : "primary");

@@ -81,31 +81,26 @@ pub fn install_claude() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn improve_prompt(prompt: String) -> Result<String, String> {
+pub async fn generate_title(prompt: String) -> Result<String, String> {
     let claude_bin = resolve_claude_path()
         .ok_or_else(|| "Claude Code CLI non installe".to_string())?;
 
-    let system_prompt = include_str!("../resources/4d-coach-prompt.txt");
-
-    let full_prompt = format!(
-        "{}\n\nOriginal prompt to improve:\n{}",
-        system_prompt, prompt
-    );
+    let system = "Generate a very short title (3-6 words, no quotes, no punctuation at the end) summarizing this user request. Reply with ONLY the title, nothing else.";
+    let full_prompt = format!("{system}\n\nUser request:\n{prompt}");
 
     let output = tauri::async_runtime::spawn_blocking(move || {
         use std::sync::mpsc;
         let (tx, rx) = mpsc::channel();
         let bin = claude_bin.clone();
-        let prompt = full_prompt.clone();
         std::thread::spawn(move || {
             let result = std::process::Command::new(&bin)
-                .args(["-p", &prompt, "--output-format", "text"])
+                .args(["-p", &full_prompt, "--output-format", "text"])
                 .output();
             let _ = tx.send(result);
         });
-        match rx.recv_timeout(std::time::Duration::from_secs(120)) {
+        match rx.recv_timeout(std::time::Duration::from_secs(30)) {
             Ok(result) => result.map_err(|e| format!("Erreur execution claude: {e}")),
-            Err(_) => Err("Timeout : l'amelioration du prompt a pris plus de 2 minutes".to_string()),
+            Err(_) => Err("Timeout generation titre".to_string()),
         }
     })
     .await
@@ -114,7 +109,7 @@ pub async fn improve_prompt(prompt: String) -> Result<String, String> {
     if output.status.success() {
         let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if result.is_empty() {
-            Err("Claude n'a pas retourne de reponse".into())
+            Err("Titre vide".into())
         } else {
             Ok(result)
         }
@@ -129,80 +124,6 @@ fn encode_project_path(dir: &str) -> String {
     dir.chars()
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect()
-}
-
-#[tauri::command]
-pub fn list_claude_sessions(project_dir: String) -> Result<String, String> {
-    let home = home_dir();
-    let encoded = encode_project_path(&project_dir);
-    let sessions_dir = std::path::Path::new(&home)
-        .join(".claude")
-        .join("projects")
-        .join(&encoded);
-
-    if !sessions_dir.exists() {
-        return Ok("[]".to_string());
-    }
-
-    let mut sessions: Vec<(String, u64)> = Vec::new();
-
-    let mut seen = std::collections::HashSet::new();
-
-    if let Ok(entries) = std::fs::read_dir(&sessions_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let is_jsonl = path.extension().map_or(false, |e| e == "jsonl");
-            let is_session_dir = path.is_dir()
-                && path.file_name().map_or(false, |n| {
-                    let s = n.to_string_lossy();
-                    s.len() == 36 && s.contains('-') && s != "memory"
-                });
-
-            if is_jsonl || is_session_dir {
-                let name = if is_jsonl {
-                    path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
-                } else {
-                    path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string())
-                };
-                if let Some(id) = name {
-                    if seen.insert(id.clone()) {
-                        let modified = entry.metadata()
-                            .and_then(|m| m.modified())
-                            .ok()
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0);
-                        sessions.push((id, modified));
-                    }
-                }
-            }
-        }
-    }
-
-    sessions.sort_by(|a, b| b.1.cmp(&a.1));
-
-    let entries: Vec<serde_json::Value> = sessions.iter()
-        .map(|(id, ts)| serde_json::json!({ "id": id, "timestamp": ts }))
-        .collect();
-
-    serde_json::to_string(&entries)
-        .map_err(|e| format!("JSON serialization failed: {e}"))
-}
-
-#[tauri::command]
-pub fn get_claude_session_dir(project_dir: String) -> Result<String, String> {
-    let home = home_dir();
-    let encoded = encode_project_path(&project_dir);
-    let sessions_dir = std::path::Path::new(&home)
-        .join(".claude")
-        .join("projects")
-        .join(&encoded);
-
-    if !sessions_dir.exists() {
-        return Err("No sessions directory found".to_string());
-    }
-
-    Ok(sessions_dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]

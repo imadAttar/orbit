@@ -10,18 +10,17 @@
 
 import { orbit } from "./api";
 import { logger } from "../lib/logger";
-import type { Project, Settings, Bookmark } from "./types";
+import type { Project, Settings } from "./types";
 
 const DATA_DIR = ".orbit";
 const DATA_FILE = "data.json";
 const LEGACY_DIR = ".claude-ide";
 
-export interface PersistedData {
+interface PersistedData {
   projects: Project[];
   activePid: string;
   activeSid: string;
   settings: Settings;
-  bookmarks?: Bookmark[];
 }
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -73,7 +72,7 @@ export async function loadData(): Promise<PersistedData | null> {
   return null;
 }
 
-export async function saveData(data: PersistedData): Promise<void> {
+async function saveData(data: PersistedData): Promise<void> {
   const json = JSON.stringify(data, null, 2);
   // Primary: Rust command
   try {

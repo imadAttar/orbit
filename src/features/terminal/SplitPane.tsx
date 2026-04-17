@@ -34,16 +34,22 @@ export default function SplitPane({
     (e: React.MouseEvent) => {
       e.preventDefault();
       dragging.current = true;
+      let rafId = 0;
 
       const onMove = (ev: MouseEvent) => {
         if (!dragging.current || !containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        const newRatio = Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width));
-        setSplitRatio(newRatio);
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          if (!containerRef.current) return;
+          const rect = containerRef.current.getBoundingClientRect();
+          const newRatio = Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width));
+          setSplitRatio(newRatio);
+        });
       };
 
       const onUp = () => {
         dragging.current = false;
+        cancelAnimationFrame(rafId);
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
       };
