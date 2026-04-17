@@ -104,19 +104,31 @@ jobs:
       - name: Collect artifacts
         shell: bash
         run: |
-          mkdir -p artifacts
+          mkdir -p artifacts/installers artifacts/updater
           BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
           if [ -d "$BUNDLE_DIR" ]; then
-            find "$BUNDLE_DIR" -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.msi" -o -name "*.exe" -o -name "*.tar.gz" -o -name "*.sig" \) -exec cp {} artifacts/ \;
+            # User-facing installers
+            find "$BUNDLE_DIR" -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.msi" \) -exec cp {} artifacts/installers/ \;
+            # Updater files (tar.gz + signatures)
+            find "$BUNDLE_DIR" -type f \( -name "*.tar.gz" -o -name "*.sig" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \) -exec cp {} artifacts/updater/ \;
           fi
-          echo "--- Collected artifacts ---"
-          ls -la artifacts/
+          echo "--- Installers ---"
+          ls -la artifacts/installers/
+          echo "--- Updater ---"
+          ls -la artifacts/updater/
 
-      - name: Upload artifacts
+      - name: Upload installers
         uses: actions/upload-artifact@v7
         with:
-          name: orbit-${{ matrix.label }}
-          path: artifacts/
+          name: installers-${{ matrix.label }}
+          path: artifacts/installers/
+          if-no-files-found: warn
+
+      - name: Upload updater files
+        uses: actions/upload-artifact@v7
+        with:
+          name: updater-${{ matrix.label }}
+          path: artifacts/updater/
           if-no-files-found: warn
 
   release:
@@ -213,6 +225,21 @@ jobs:
         with:
           draft: true
           generate_release_notes: true
+          body: |
+            ## Download
+
+            | Platform | File |
+            |----------|------|
+            | macOS (Apple Silicon) | `Orbit_*_aarch64.dmg` |
+            | macOS (Intel) | `Orbit_*_x64.dmg` |
+            | Windows | `Orbit_*_x64-setup.msi` |
+            | Linux | `Orbit_*_amd64.deb` or `Orbit_*_amd64.AppImage` |
+
+            <details><summary>Updater files (for auto-update, ignore these)</summary>
+
+            The `.tar.gz`, `.sig`, `.nsis.zip` and `latest.json` files are used by the in-app auto-updater.
+            </details>
           files: |
-            artifacts/**/*
+            artifacts/installers-*/*
+            artifacts/updater-*/*
             latest.json
