@@ -289,21 +289,20 @@ export const useStore = create<AppStore>((set, get) => ({
     set((s) => {
       const proj = s.projects.find((p) => p.id === s.activePid);
       if (!proj) return s;
-      const isLast = proj.sessions.length <= 1;
+      const remaining = proj.sessions.filter((ss) => ss.id !== sid);
+      const isLast = remaining.length === 0;
       const freshSession = isLast ? makeSession("main") : null;
+      const sessions = isLast && freshSession ? [freshSession] : remaining;
       let activeSid: string;
       if (isLast && freshSession) {
         activeSid = freshSession.id;
       } else if (s.activeSid === sid) {
         const idx = proj.sessions.findIndex((ss) => ss.id === sid);
-        const neighbor = idx > 0 ? idx - 1 : 1;
-        activeSid = proj.sessions[neighbor].id;
+        const neighbor = Math.min(Math.max(idx - 1, 0), sessions.length - 1);
+        activeSid = sessions[neighbor].id;
       } else {
         activeSid = s.activeSid;
       }
-      const sessions = isLast && freshSession
-        ? [freshSession]
-        : proj.sessions.filter((ss) => ss.id !== sid);
       const projects = s.projects.map((p) =>
         p.id === s.activePid ? { ...p, sessions } : p
       );
