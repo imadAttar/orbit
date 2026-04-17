@@ -3,94 +3,10 @@ import type { Project, Session, Settings, SplitLayout } from "./types";
 import { defaultTerminal } from "../lib/platform";
 import { detectSystemLanguage } from "../i18n/i18n";
 import { loadData, debouncedSave } from "./persistence";
-import { pty, scrollback, bookmarks as bookmarksApi, terminal as terminalApi, listen } from "./api";
+import { pty, scrollback, terminal as terminalApi, listen } from "./api";
 
-// Internal state — not in Zustand (no re-renders needed), but grouped for clarity and testability
-const _internal = {
-  watcherReady: false,
-  skillScanInterval: null as ReturnType<typeof setInterval> | null,
-
-  /** Reset internal state (for testing) */
-  reset() {
-    _internal.watcherReady = false;
-    if (_internal.skillScanInterval) {
-      clearInterval(_internal.skillScanInterval);
-      _internal.skillScanInterval = null;
-    }
-  },
-};
-
-// Exported for test assertions only
-export { _internal };
-
-// --- Helpers ---
-
-/** Filter out bookmarks that already exist (by prompt), return new ones with IDs */
-function dedupeNewBookmarks(
-  incoming: { name: string; prompt: string; description?: string }[],
-  existing: { prompt: string }[],
-): { id: string; name: string; prompt: string; description?: string }[] {
-  const existingPrompts = new Set(existing.map((b) => b.prompt));
-  return incoming
-    .filter((p) => !existingPrompts.has(p.prompt))
-    .map((p) => ({ id: uid(), name: p.name, prompt: p.prompt, description: p.description }));
-}
-
-// --- Bookmark event listeners (Rust watcher emits these) ---
-
-async function setupBookmarkListeners() {
-  if (_internal.watcherReady) return;
-  _internal.watcherReady = true;
-  try {
-    await listen<string>("bookmark-pending", (payload) => {
-      try {
-        const parsed = JSON.parse(payload);
-        if (!Array.isArray(parsed)) return;
-        const pending = parsed.filter(
-          (p: Record<string, unknown>) => typeof p.name === "string" && typeof p.prompt === "string",
-        );
-        if (pending.length === 0) return;
-        const s = useStore.getState();
-        const proj = s.projects.find((p) => p.id === s.activePid);
-        if (!proj) return;
-        const currentBookmarks = proj.bookmarks ?? [];
-        const newBookmarks = dedupeNewBookmarks(pending, currentBookmarks);
-        if (newBookmarks.length === 0) return;
-        const bookmarks = [...currentBookmarks, ...newBookmarks];
-        const projects = s.projects.map((p) =>
-          p.id === s.activePid ? { ...p, bookmarks } : p
-        );
-        persist({ ...s, projects });
-        useStore.setState({ projects });
-      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("store", `bookmark-pending parse error: ${err}`)); }
-    });
-
-    await listen<string>("bookmark-scores", (payload) => {
-      try {
-        const scores: Record<string, number> = JSON.parse(payload);
-        if (!scores || typeof scores !== "object" || Array.isArray(scores)) return;
-        useStore.setState({ bookmarkScores: scores });
-        const s = useStore.getState();
-        const proj = s.projects.find((p) => p.id === s.activePid);
-        if (!proj) return;
-        const currentBookmarks = proj.bookmarks ?? [];
-        const bookmarks = [...currentBookmarks].sort((a, b) => {
-          const sa = scores[a.prompt] ?? 0;
-          const sb = scores[b.prompt] ?? 0;
-          return sb - sa;
-        });
-        if (bookmarks.every((b, i) => b.id === currentBookmarks[i]?.id)) return;
-        const projects = s.projects.map((p) =>
-          p.id === s.activePid ? { ...p, bookmarks } : p
-        );
-        persist({ ...s, projects });
-        useStore.setState({ projects });
-      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("store", `bookmark-scores parse error: ${err}`)); }
-    });
-  } catch {
-    // Not in Tauri — skip
-  }
-}
+// Track freshly created session IDs — these skip scrollback check on first mount
+export const freshSessionIds = new Set<string>();
 
 // --- Session state detection (global listener) ---
 
@@ -99,7 +15,6 @@ interface SessionStateData {
   state: string;
   ts: number;
   tool?: string;
-  changed_files?: string[];
 }
 
 const _prevSessionStates: Record<string, string> = {};
@@ -129,50 +44,18 @@ async function setupSessionStateListener() {
 
         store.setSessionState(data.session_id, data.state as "working" | "idle" | "waiting");
         if (data.tool) store.setSessionTool(data.session_id, data.tool);
-        if (data.changed_files && data.changed_files.length > 0) {
-          store.setSessionChangedFiles(data.session_id, data.changed_files);
-        }
-
         if (data.state === "idle" && prev === "working") {
           if (store.activeSid !== matchedSid) {
             terminalApi.notifyDone(`${matchedProject.name} — ${matchedSession.name}`);
+            window.dispatchEvent(new CustomEvent("session-completed", {
+              detail: { sessionId: matchedSid, projectId: matchedProject.id },
+            }));
           }
         }
       } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("store", `session-state parse error: ${err}`)); }
     });
   } catch {
     // Not in Tauri — skip
-  }
-}
-
-// --- Skill auto-scan ---
-
-interface SkillInfo {
-  name: string;
-  description?: string;
-  prompt: string;
-}
-
-async function scanAndImportSkills(projectDir: string) {
-  try {
-    const skills: SkillInfo[] = await bookmarksApi.scanSkills(projectDir);
-    if (skills.length === 0) return;
-
-    const s = useStore.getState();
-    const proj = s.projects.find((p) => p.dir === projectDir);
-    if (!proj) return;
-
-    const currentBookmarks = proj.bookmarks ?? [];
-    const newBookmarks = dedupeNewBookmarks(skills, currentBookmarks);
-    if (newBookmarks.length === 0) return;
-    const bookmarks = [...currentBookmarks, ...newBookmarks];
-    const projects = s.projects.map((p) =>
-      p.id === proj.id ? { ...p, bookmarks } : p
-    );
-    persist({ ...s, projects });
-    useStore.setState({ projects });
-  } catch (err) {
-    import("../lib/logger").then(({ logger }) => logger.warn("store", `skill scan failed: ${err}`));
   }
 }
 
@@ -206,8 +89,6 @@ interface AppStore {
   loaded: boolean;
   sessionStates: Record<string, "working" | "idle" | "waiting">; // claudeSessionId -> state
   sessionTools: Record<string, string>; // claudeSessionId -> last tool used
-  sessionChangedFiles: Record<string, string[]>; // claudeSessionId -> changed file paths
-  bookmarkScores: Record<string, number>; // prompt -> score (from hook)
   projectSessions: Record<string, string>; // pid -> derniere session active (non persiste)
   sessionCosts: Record<string, number>;
   splitLayout: SplitLayout;
@@ -228,27 +109,15 @@ interface AppStore {
 
   setSessionState: (claudeSessionId: string, state: "working" | "idle" | "waiting") => void;
   setSessionTool: (claudeSessionId: string, tool: string) => void;
-  setSessionChangedFiles: (claudeSessionId: string, files: string[]) => void;
-
   updateSessionCost: (sid: string, cost: number) => void;
   setClaudeSessionId: (sid: string, claudeId: string) => void;
   setDangerousMode: (sid: string, on: boolean) => void;
 
   setSidebarWidth: (w: number) => void;
-  setTerminal: (t: Settings["terminal"]) => void;
-  setEditor: (e: Settings["editor"]) => void;
-  setTheme: (t: Settings["theme"]) => void;
   setFontSize: (s: number) => void;
-  setAnalytics: (on: boolean) => void;
-  setAutoUpdate: (on: boolean) => void;
   setDefaultMode: (mode: import("./types").SessionMode) => void;
-  setLanguage: (lang: import("./types").Language) => void;
   setStatuslineAsked: () => void;
-
-  // Bookmarks
-  addBookmark: (name: string, prompt: string) => void;
-  removeBookmark: (id: string) => void;
-  updateBookmark: (id: string, name: string, prompt: string) => void;
+  updateSettings: (partial: Partial<Settings>) => void;
 
   // Split pane
   splitSession: (secondarySid: string) => void;
@@ -286,8 +155,6 @@ export const useStore = create<AppStore>((set, get) => ({
   loaded: false,
   sessionStates: {},
   sessionTools: {},
-  sessionChangedFiles: {},
-  bookmarkScores: {},
   projectSessions: {},
   sessionCosts: {},
   splitLayout: { type: "none", primarySid: "", ratio: 0.5 },
@@ -295,20 +162,8 @@ export const useStore = create<AppStore>((set, get) => ({
   init: async () => {
     const data = await loadData();
     if (data && data.projects.length > 0) {
-      // Migrate top-level bookmarks into the active project (backward compat)
-      let projects = data.projects;
-      if (data.bookmarks && data.bookmarks.length > 0) {
-        const activeProj = projects.find((p) => p.id === data.activePid);
-        if (activeProj && (!activeProj.bookmarks || activeProj.bookmarks.length === 0)) {
-          projects = projects.map((p) =>
-            p.id === data.activePid
-              ? { ...p, bookmarks: data.bookmarks }
-              : p
-          );
-        }
-      }
       set({
-        projects,
+        projects: data.projects,
         activePid: data.activePid,
         activeSid: data.activeSid,
         settings: { ...get().settings, ...data.settings },
@@ -318,22 +173,8 @@ export const useStore = create<AppStore>((set, get) => ({
       // No data — show onboarding (create first project)
       set({ loaded: true });
     }
-    // Setup watcher-based event listeners (replaces polling)
-    await setupBookmarkListeners();
+    // Setup watcher-based event listeners
     await setupSessionStateListener();
-    // Auto-scan skills for active project
-    const activeProj2 = get().projects.find((p) => p.id === get().activePid);
-    if (activeProj2) {
-      scanAndImportSkills(activeProj2.dir);
-    }
-    // Rescan skills every 60s (lightweight, local files only)
-    if (_internal.skillScanInterval) clearInterval(_internal.skillScanInterval);
-    _internal.skillScanInterval = setInterval(() => {
-      if (typeof document !== "undefined" && !document.hasFocus()) return;
-      const s = get();
-      const proj = s.projects.find((p) => p.id === s.activePid);
-      if (proj) scanAndImportSkills(proj.dir);
-    }, 60000);
   },
 
   addProject: (name, dir) => {
@@ -347,8 +188,6 @@ export const useStore = create<AppStore>((set, get) => ({
       persist({ ...s, ...next });
       return next;
     });
-    // Auto-scan skills for new project
-    scanAndImportSkills(dir);
   },
 
   renameProject: (pid, name) =>
@@ -396,8 +235,6 @@ export const useStore = create<AppStore>((set, get) => ({
       persist({ ...s, ...next });
       return next;
     });
-    // Scan skills when switching project
-    scanAndImportSkills(proj.dir);
   },
 
   addSession: (name, type) =>
@@ -407,6 +244,7 @@ export const useStore = create<AppStore>((set, get) => ({
       const count = proj.sessions.length + 1;
       const defaultName = type === "terminal" ? `terminal-${count}` : `session-${count}`;
       const session = makeSession(name || defaultName, type);
+      freshSessionIds.add(session.id);
       const projects = s.projects.map((p) =>
         p.id === s.activePid
           ? { ...p, sessions: [...p.sessions, session] }
@@ -492,11 +330,6 @@ export const useStore = create<AppStore>((set, get) => ({
       sessionTools: { ...s.sessionTools, [claudeSessionId]: tool },
     })),
 
-  setSessionChangedFiles: (claudeSessionId, files) =>
-    set((s) => ({
-      sessionChangedFiles: { ...s.sessionChangedFiles, [claudeSessionId]: files },
-    })),
-
   updateSessionCost: (sid, cost) =>
     set((s) => ({
       sessionCosts: { ...s.sessionCosts, [sid]: cost },
@@ -533,45 +366,10 @@ export const useStore = create<AppStore>((set, get) => ({
       return { settings };
     }),
 
-  setTerminal: (t) =>
-    set((s) => {
-      const settings = { ...s.settings, terminal: t };
-      persist({ ...s, settings });
-      return { settings };
-    }),
-
-  setEditor: (e) =>
-    set((s) => {
-      const settings = { ...s.settings, editor: e };
-      persist({ ...s, settings });
-      return { settings };
-    }),
-
-  setTheme: (t) =>
-    set((s) => {
-      const settings = { ...s.settings, theme: t };
-      persist({ ...s, settings });
-      return { settings };
-    }),
-
   setFontSize: (size) =>
     set((s) => {
       const clamped = Math.max(8, Math.min(20, size));
       const settings = { ...s.settings, fontSize: clamped };
-      persist({ ...s, settings });
-      return { settings };
-    }),
-
-  setAnalytics: (on) =>
-    set((s) => {
-      const settings = { ...s.settings, analytics: on };
-      persist({ ...s, settings });
-      return { settings };
-    }),
-
-  setAutoUpdate: (on) =>
-    set((s) => {
-      const settings = { ...s.settings, autoUpdate: on };
       persist({ ...s, settings });
       return { settings };
     }),
@@ -583,13 +381,6 @@ export const useStore = create<AppStore>((set, get) => ({
       return { settings };
     }),
 
-  setLanguage: (lang) =>
-    set((s) => {
-      const settings = { ...s.settings, language: lang };
-      persist({ ...s, settings });
-      return { settings };
-    }),
-
   setStatuslineAsked: () =>
     set((s) => {
       const settings = { ...s.settings, statuslineAsked: true };
@@ -597,46 +388,12 @@ export const useStore = create<AppStore>((set, get) => ({
       return { settings };
     }),
 
-  // Bookmarks (per-project)
-  addBookmark: (name, prompt) =>
+  updateSettings: (partial) =>
     set((s) => {
-      const proj = s.projects.find((p) => p.id === s.activePid);
-      if (!proj) return s;
-      const bookmarks = [...(proj.bookmarks ?? []), { id: uid(), name, prompt }];
-      const projects = s.projects.map((p) =>
-        p.id === s.activePid ? { ...p, bookmarks } : p
-      );
-      persist({ ...s, projects });
-      return { projects };
+      const settings = { ...s.settings, ...partial };
+      persist({ ...s, settings });
+      return { settings };
     }),
-
-  removeBookmark: (id) =>
-    set((s) => {
-      const proj = s.projects.find((p) => p.id === s.activePid);
-      if (!proj) return s;
-      const bookmarks = (proj.bookmarks ?? []).filter((b) => b.id !== id);
-      const projects = s.projects.map((p) =>
-        p.id === s.activePid ? { ...p, bookmarks } : p
-      );
-      persist({ ...s, projects });
-      return { projects };
-    }),
-
-  updateBookmark: (id, name, prompt) =>
-    set((s) => {
-      const proj = s.projects.find((p) => p.id === s.activePid);
-      if (!proj) return s;
-      const bookmarks = (proj.bookmarks ?? []).map((b) =>
-        b.id === id ? { ...b, name, prompt } : b
-      );
-      const projects = s.projects.map((p) =>
-        p.id === s.activePid ? { ...p, bookmarks } : p
-      );
-      persist({ ...s, projects });
-      return { projects };
-    }),
-
-  // importPendingBookmarks/applyBookmarkScores — now handled by Rust watcher events
 
   // Split pane
   splitSession: (secondarySid) =>
@@ -668,9 +425,15 @@ export const useStore = create<AppStore>((set, get) => ({
 
 // --- Selectors (reusable across components) ---
 
-/** Select the active project */
-export const selectActiveProject = (s: AppStore) =>
-  s.projects.find((p) => p.id === s.activePid);
+/** Select the active project — stable ref (only changes when activePid or the project itself changes) */
+let _prevActiveProject: Project | undefined;
+export const selectActiveProject = (s: AppStore) => {
+  const proj = s.projects.find((p) => p.id === s.activePid);
+  if (!proj) { _prevActiveProject = undefined; return undefined; }
+  if (_prevActiveProject && _prevActiveProject.id === proj.id && _prevActiveProject === proj) return _prevActiveProject;
+  _prevActiveProject = proj;
+  return proj;
+};
 
 /** Select the active session */
 export const selectActiveSession = (s: AppStore) => {

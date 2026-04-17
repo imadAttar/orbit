@@ -7,8 +7,7 @@
   transition: background 150ms;
 }
 
-.resize-handle:hover,
-.resize-handle--active {
+.resize-handle:hover {
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent-glow);
 }
@@ -248,31 +247,6 @@
 .session-restore__btn--delete:hover {
   background: rgba(var(--danger-rgb), 0.15);
   border-color: var(--danger);
-}
-
-.session-restore__btn--yolo {
-  background: rgba(var(--danger-rgb), 0.15);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.session-restore__btn--yolo:hover {
-  background: var(--danger);
-  color: var(--bg);
-}
-
-.session-restore__default {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-dim);
-  cursor: pointer;
-  margin-left: 8px;
-}
-
-.session-restore__default input {
-  cursor: pointer;
 }
 
 /* --- Mode Picker (session start) --- */

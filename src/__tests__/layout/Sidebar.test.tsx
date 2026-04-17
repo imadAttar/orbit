@@ -61,9 +61,6 @@ function setupStore(overrides: Record<string, unknown> = {}) {
 describe("Sidebar", () => {
   const handlers = {
     onContextMenu: vi.fn<(sid: string, x: number, y: number) => void>(),
-    onOpenSkillSession: vi.fn<(name: string, command: string) => void>(),
-    onOpenPromptCoach: vi.fn<() => void>(),
-    onSendToSession: vi.fn<(prompt: string) => void>(),
   };
 
   beforeEach(() => {
@@ -99,7 +96,6 @@ describe("Sidebar", () => {
     expect(useStore.getState().activeSid).toBe("s2");
   });
 
-
   it("shows cost for session", () => {
     setupStore({ sessionCosts: { s1: 1.5, s3: 0.25 } });
     const { container } = renderSidebar();
@@ -126,15 +122,9 @@ describe("Sidebar", () => {
 
   it("add session button creates a new session", () => {
     const { container } = renderSidebar();
-    const addBtn = container.querySelector(".sidebar__add-btn--claude") as HTMLElement;
+    const addBtn = (container.querySelector("[data-testid='add-claude-session']") ?? container.querySelector(".sidebar__group-add")) as HTMLElement;
     fireEvent.click(addBtn);
     const proj = useStore.getState().projects.find((p) => p.id === "p1");
     expect(proj?.sessions.length).toBe(4);
-  });
-
-  it("renders skill buttons", () => {
-    const { container } = renderSidebar();
-    const skillBtns = container.querySelectorAll(".sidebar__skill-btn");
-    expect(skillBtns.length).toBe(4);
   });
 });

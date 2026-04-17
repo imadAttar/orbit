@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useStore } from "../../../core/store";
+import { useStore, freshSessionIds } from "../../../core/store";
 import { scrollback } from "../../../core/api";
 import type { Terminal as XTerm } from "@xterm/xterm";
 
@@ -11,6 +11,7 @@ interface RestoreConfig {
   modeChoice: "normal" | "yolo" | null;
   termRef: React.RefObject<XTerm | null>;
   spawnedRef: React.RefObject<boolean>;
+  sessionType?: "claude" | "terminal";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dp: (action: any) => void;
 }
@@ -30,11 +31,26 @@ export function useTerminalRestore({
   modeChoice,
   termRef,
   spawnedRef,
+  sessionType,
   dp,
 }: RestoreConfig) {
   // Check if scrollback exists — show prompt if yes, auto-start if no
+  // Terminal sessions skip restore prompt — always start fresh
+  // Fresh sessions (just created) skip scrollback IPC entirely
   useEffect(() => {
     if (!activated) return;
+    if (sessionType === "terminal") {
+      dp({ type: "setRestore", value: "fresh" });
+      return;
+    }
+    // Fast-path: freshly created sessions have no scrollback — skip IPC and resolve immediately
+    if (freshSessionIds.has(sessionId)) {
+      freshSessionIds.delete(sessionId);
+      dp({ type: "setRestore", value: "fresh" });
+      const defaultMode = useStore.getState().settings.defaultMode || "normal";
+      dp({ type: "setMode", value: defaultMode });
+      return;
+    }
     let cancelled = false;
     dp({ type: "setRestore", value: "pending" });
     (async () => {
@@ -78,9 +94,7 @@ export function useTerminalRestore({
   useEffect(() => {
     if (restoreChoice !== "resume" && restoreChoice !== "fresh") return;
     if (modeChoice !== null) return;
-    const defaultMode = useStore.getState().settings.defaultMode;
-    if (defaultMode) {
-      dp({ type: "setMode", value: defaultMode });
-    }
+    const defaultMode = useStore.getState().settings.defaultMode || "normal";
+    dp({ type: "setMode", value: defaultMode });
   }, [restoreChoice, modeChoice]);
 }

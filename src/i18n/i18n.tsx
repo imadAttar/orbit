@@ -2,8 +2,8 @@ import { createContext, useContext, useMemo } from "react";
 import fr from "./fr.json";
 import en from "./en.json";
 
-export type Language = "fr" | "en";
-export type TranslationKey = keyof typeof fr;
+type Language = "fr" | "en";
+type TranslationKey = keyof typeof fr;
 
 const translations: Record<Language, Record<string, string>> = { fr, en };
 
@@ -49,6 +49,3 @@ export function useT(): TFunction {
   return useContext(I18nContext).t;
 }
 
-export function useLanguage(): Language {
-  return useContext(I18nContext).language;
-}

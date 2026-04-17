@@ -9,7 +9,7 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   BaseDirectory: { Home: 1 },
 }));
 
-// Mock Tauri core (for openExternalTerminal)
+// Mock Tauri core
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
@@ -74,7 +74,6 @@ function createTestCallbacks(): KeyboardCallbacks {
     confirmDeleteSession: (sid) => window.dispatchEvent(new CustomEvent("test:confirmDeleteSession", { detail: sid })),
     toggleSearch: () => window.dispatchEvent(new CustomEvent("test:toggleSearch")),
     showPreferences: () => window.dispatchEvent(new CustomEvent("test:showPreferences")),
-    toggleCommandPalette: () => window.dispatchEvent(new CustomEvent("test:toggleCommandPalette")),
   };
 }
 
@@ -246,18 +245,6 @@ describe("App keyboard shortcuts", () => {
       getState().setFontSize(8);
       fire("-", { metaKey: true });
       expect(getState().settings.fontSize).toBe(8);
-    });
-  });
-
-  // --- Cmd+P: toggle command palette ---
-
-  describe("Cmd+P", () => {
-    it("should dispatch toggle command palette event", () => {
-      const spy = vi.fn();
-      window.addEventListener("test:toggleCommandPalette", spy);
-      fire("p", { metaKey: true });
-      expect(spy).toHaveBeenCalledTimes(1);
-      window.removeEventListener("test:toggleCommandPalette", spy);
     });
   });
 

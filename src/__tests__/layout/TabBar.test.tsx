@@ -42,7 +42,6 @@ function setupStore(overrides: Record<string, unknown> = {}) {
 describe("TabBar", () => {
   const handlers = {
     onNewProject: vi.fn(),
-    onCommandPalette: vi.fn(),
   };
 
   beforeEach(() => {

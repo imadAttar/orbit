@@ -7,7 +7,7 @@ export const isLinux = !isMac && !isWindows;
 export const modLabel = isMac ? "Cmd" : "Ctrl";
 export const modSymbol = isMac ? "\u2318" : "Ctrl+";
 
-export type TerminalOption = { value: string; label: string };
+type TerminalOption = { value: string; label: string };
 
 export const terminalOptions: TerminalOption[] = isMac
   ? [

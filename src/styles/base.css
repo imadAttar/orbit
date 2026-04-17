@@ -73,7 +73,7 @@ html, body, #root {
   transition: background-color 200ms ease, color 200ms ease;
 }
 
-.app, .sidebar, .tab-bar, .status-bar, .terminal-area, .git-panel, .modal, .command-palette {
+.app, .sidebar, .tab-bar, .status-bar, .terminal-area, .modal {
   transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
 }
 

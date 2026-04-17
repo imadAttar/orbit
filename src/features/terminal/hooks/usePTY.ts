@@ -7,7 +7,7 @@ import { useStore } from "../../../core/store";
 import { THEMES } from "../../../lib/themes";
 import { stripAnsi } from "../../../lib/terminalParser";
 import { trackEvent } from "../../../lib/analytics";
-import { pty, terminal, scrollback, listen } from "../../../core/api";
+import { pty, terminal, scrollback, listen, claude } from "../../../core/api";
 import { useScrollback } from "./useScrollback";
 
 // File path regex for xterm link provider
@@ -235,6 +235,8 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
 
         // Forward xterm input to PTY
         let lastPromptTrack = 0;
+        let inputBuffer = "";
+        let titleGenerated = false;
         term.onData((data) => {
           pty.write(sid, data).catch(() => {});
           // Track Enter key — throttle to max 1 event per 2s to avoid noise from vim/less/confirmations
@@ -243,6 +245,22 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             if (now - lastPromptTrack > 2000) {
               lastPromptTrack = now;
               trackEvent("prompt_sent");
+            }
+            // Auto-title: generate on first meaningful prompt
+            if (!titleGenerated && !isTerminalSession && inputBuffer.trim().length > 3) {
+              titleGenerated = true;
+              const prompt = inputBuffer.trim();
+              claude.generateTitle(prompt).then((title) => {
+                useStore.getState().renameSession(sid, title);
+              }).catch(() => {});
+            }
+            inputBuffer = "";
+          } else if (!titleGenerated) {
+            // Accumulate typed characters (ignore control chars)
+            if (data.length === 1 && data.charCodeAt(0) >= 32) {
+              inputBuffer += data;
+            } else if (data === "\x7f") {
+              inputBuffer = inputBuffer.slice(0, -1);
             }
           }
         });
@@ -309,13 +327,16 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
     };
 
     const timer = setTimeout(doFit, 50);
-    window.addEventListener("resize", doFit);
-    const observer = new ResizeObserver(() => doFit());
+    let resizeTimer = 0;
+    const debouncedFit = () => { clearTimeout(resizeTimer); resizeTimer = window.setTimeout(doFit, 100); };
+    window.addEventListener("resize", debouncedFit);
+    const observer = new ResizeObserver(debouncedFit);
     observer.observe(containerRef.current);
 
     return () => {
       clearTimeout(timer);
-      window.removeEventListener("resize", doFit);
+      clearTimeout(resizeTimer);
+      window.removeEventListener("resize", debouncedFit);
       observer.disconnect();
     };
   }, [isVisible, sessionId]);

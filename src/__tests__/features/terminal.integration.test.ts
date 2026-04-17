@@ -132,6 +132,7 @@ vi.mock("../../core/store", () => {
   );
   return {
     useStore: store,
+    freshSessionIds: new Set(),
   };
 });
 

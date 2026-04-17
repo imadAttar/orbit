@@ -182,9 +182,12 @@ describe("store", () => {
   });
 
   describe("settings", () => {
-    it("setTheme updates theme", () => {
-      getState().setTheme("dracula");
-      expect(getState().settings.theme).toBe("dracula");
+    it("updateSettings updates multiple fields at once", () => {
+      getState().updateSettings({ theme: "dracula", terminal: "ghostty", analytics: false });
+      const s = getState().settings;
+      expect(s.theme).toBe("dracula");
+      expect(s.terminal).toBe("ghostty");
+      expect(s.analytics).toBe(false);
     });
 
     it("setFontSize updates fontSize", () => {
@@ -192,19 +195,9 @@ describe("store", () => {
       expect(getState().settings.fontSize).toBe(14);
     });
 
-    it("setAnalytics updates analytics", () => {
-      getState().setAnalytics(false);
-      expect(getState().settings.analytics).toBe(false);
-    });
-
     it("setSidebarWidth updates sidebarWidth", () => {
       getState().setSidebarWidth(300);
       expect(getState().settings.sidebarWidth).toBe(300);
-    });
-
-    it("setTerminal updates terminal", () => {
-      getState().setTerminal("ghostty");
-      expect(getState().settings.terminal).toBe("ghostty");
     });
 
     it("setStatuslineAsked sets to true", () => {
@@ -239,46 +232,6 @@ describe("store", () => {
       expect(getState().projects[0].sessions[0].dangerousMode).toBe(false);
     });
   });
-
-  describe("bookmarks", () => {
-    function getProjectBookmarks() {
-      const s = getState();
-      const proj = s.projects.find((p) => p.id === s.activePid);
-      return proj?.bookmarks ?? [];
-    }
-
-    it("addBookmark adds to active project with id", () => {
-      getState().addProject("p", "/p");
-      getState().addBookmark("fix tests", "run npm test and fix failures");
-      const bookmarks = getProjectBookmarks();
-      expect(bookmarks).toHaveLength(1);
-      expect(bookmarks[0].name).toBe("fix tests");
-      expect(bookmarks[0].prompt).toBe("run npm test and fix failures");
-      expect(bookmarks[0].id).toBeDefined();
-    });
-
-    it("removeBookmark removes by id", () => {
-      getState().addProject("p", "/p");
-      getState().addBookmark("bm1", "prompt1");
-      getState().addBookmark("bm2", "prompt2");
-      const id = getProjectBookmarks()[0].id;
-      getState().removeBookmark(id);
-      expect(getProjectBookmarks()).toHaveLength(1);
-      expect(getProjectBookmarks()[0].name).toBe("bm2");
-    });
-
-    it("updateBookmark updates name and prompt", () => {
-      getState().addProject("p", "/p");
-      getState().addBookmark("old", "old prompt");
-      const id = getProjectBookmarks()[0].id;
-      getState().updateBookmark(id, "new", "new prompt");
-      expect(getProjectBookmarks()[0].name).toBe("new");
-      expect(getProjectBookmarks()[0].prompt).toBe("new prompt");
-    });
-  });
-
-  // importPendingBookmarks tests removed — bookmark import is now event-driven
-  // via Rust filesystem watcher (bookmark-pending/bookmark-scores events)
 
   describe("split pane", () => {
     it("splitSession creates vertical split with primarySid", () => {
@@ -321,24 +274,17 @@ describe("store", () => {
   });
 
   describe("settings extended", () => {
-    it("setEditor updates editor", () => {
-      getState().setEditor("zed");
-      expect(getState().settings.editor).toBe("zed");
-    });
-
-    it("setAutoUpdate updates autoUpdate", () => {
-      getState().setAutoUpdate(false);
-      expect(getState().settings.autoUpdate).toBe(false);
+    it("updateSettings batch applies multiple settings", () => {
+      getState().updateSettings({ editor: "zed", autoUpdate: false, language: "en" });
+      const s = getState().settings;
+      expect(s.editor).toBe("zed");
+      expect(s.autoUpdate).toBe(false);
+      expect(s.language).toBe("en");
     });
 
     it("setDefaultMode updates defaultMode", () => {
       getState().setDefaultMode("yolo");
       expect(getState().settings.defaultMode).toBe("yolo");
-    });
-
-    it("setLanguage updates language", () => {
-      getState().setLanguage("en");
-      expect(getState().settings.language).toBe("en");
     });
 
     it("setFontSize clamps to 8-20 range", () => {

@@ -69,26 +69,17 @@ export const claude = {
 
   install: () => call<string>("install_claude"),
 
-  improvePrompt: (prompt: string) =>
-    call<string>("improve_prompt", { prompt }),
-
-  listSessions: (projectDir: string) =>
-    call<string>("list_claude_sessions", { projectDir }),
-
-  getSessionDir: (projectDir: string) =>
-    call<string>("get_claude_session_dir", { projectDir }),
-
   deleteSession: (projectDir: string, sessionId: string) =>
     call<void>("delete_claude_session", { projectDir, sessionId }),
+
+  generateTitle: (prompt: string) =>
+    call<string>("generate_title", { prompt }),
 };
 
 
 // === Terminal ===
 
 export const terminal = {
-  openExternal: (terminal: string, dir: string) =>
-    call<void>("open_terminal", { terminal, dir }),
-
   openInEditor: (editor: string, path: string, line: number, projectDir: string) =>
     call<void>("open_in_editor", { editor, path, line, projectDir }),
 
@@ -121,24 +112,8 @@ export const orbit = {
   createDirectory: (path: string) =>
     call<void>("create_directory", { path }),
 
-  saveTempImage: (data: string, extension: string) =>
-    call<string>("save_temp_image", { data, extension }),
-
   collectCrashReport: (errorMessage: string) =>
     call<string>("collect_crash_report", { errorMessage }),
-};
-
-// === Bookmarks & Skills ===
-
-export const bookmarks = {
-  scanSkills: (projectDir: string) =>
-    call<{ name: string; prompt: string; description?: string }[]>("scan_project_skills", { projectDir }),
-
-  score: (transcriptPath: string, lastMsg: string) =>
-    call<Record<string, number>>("score_bookmarks", { transcriptPath, lastMsg }),
-
-  installHooks: (projectDir: string) =>
-    call<void>("install_orbit_hooks", { projectDir }),
 };
 
 // === Status Line ===

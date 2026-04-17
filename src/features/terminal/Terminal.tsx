@@ -109,6 +109,7 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
     modeChoice: ts.modeChoice,
     termRef: ptyResult.termRef,
     spawnedRef: ptyResult.spawnedRef,
+    sessionType,
     dp,
   });
 
@@ -140,13 +141,23 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
           <span className="session-restore__text">{t("session.previousAvailable")}</span>
           <button
             className="session-restore__btn session-restore__btn--resume"
-            onClick={() => { dp({ type: "setRestore", value: "resume" }); trackEvent("session_resumed"); }}
+            onClick={() => {
+              dp({ type: "setRestore", value: "resume" });
+              const dm = useStore.getState().settings.defaultMode;
+              if (dm) dp({ type: "setMode", value: dm });
+              trackEvent("session_resumed");
+            }}
           >
             {t("session.resume")}
           </button>
           <button
             className="session-restore__btn session-restore__btn--fresh"
-            onClick={() => { dp({ type: "setRestore", value: "fresh" }); trackEvent("session_fresh_start"); }}
+            onClick={() => {
+              dp({ type: "setRestore", value: "fresh" });
+              const dm = useStore.getState().settings.defaultMode;
+              if (dm) dp({ type: "setMode", value: dm });
+              trackEvent("session_fresh_start");
+            }}
           >
             {t("session.freshStart")}
           </button>
@@ -168,7 +179,7 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
                   trackEvent("session_deleted");
                 }}
               >
-                {t("session.delete")}
+                {t("session.deleteBtn")}
               </button>
           )}
         </div>

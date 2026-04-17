@@ -23,23 +23,18 @@ export function useAppInit(dispatch: (action: any) => void) {
         autoUpdate: s.autoUpdate ? 1 : 0,
       });
       initUpdater();
-      try {
-        const installed = await claude.isInstalled();
-        if (!installed) {
-          dispatch({ type: "set", field: "showInstallClaude", value: true });
-          return;
-        }
-      } catch {
-        /* not in Tauri */
+      const checkInstalled = claude.isInstalled().catch(() => true);
+      const checkStatusline = !s.statuslineAsked && !isWindows
+        ? statusline.has().catch(() => true)
+        : Promise.resolve(true);
+      const [installed, hasStatusline] = await Promise.all([checkInstalled, checkStatusline]);
+      if (!installed) {
+        dispatch({ type: "set", field: "showInstallClaude", value: true });
+        return;
       }
       if (!s.statuslineAsked && !isWindows) {
-        try {
-          const has = await statusline.has();
-          if (!has) dispatch({ type: "set", field: "showStatuslinePrompt", value: true });
-          else useStore.getState().setStatuslineAsked();
-        } catch {
-          /* not in Tauri */
-        }
+        if (!hasStatusline) dispatch({ type: "set", field: "showStatuslinePrompt", value: true });
+        else useStore.getState().setStatuslineAsked();
       }
     });
   }, [init]);
