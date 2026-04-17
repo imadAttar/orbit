@@ -72,7 +72,7 @@ function sendEvent(event: string, props?: Record<string, string | number>) {
             : navigator.userAgent.includes("Win") ? "Windows"
             : "Linux",
           appVersion: __APP_VERSION__,
-          sdkVersion: "orbit@0.1.0",
+          sdkVersion: `orbit@${__APP_VERSION__}`,
         },
         props: props ?? {},
       }]),

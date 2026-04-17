@@ -48,8 +48,6 @@ describe("store", () => {
       },
       loaded: false,
       sessionCosts: {},
-      splitLayout: { type: "none", primarySid: "", ratio: 0.5 },
-      focusedPane: "primary" as const,
     });
   });
 
@@ -230,46 +228,6 @@ describe("store", () => {
       expect(getState().projects[0].sessions[0].dangerousMode).toBe(true);
       getState().setDangerousMode(sid, false);
       expect(getState().projects[0].sessions[0].dangerousMode).toBe(false);
-    });
-  });
-
-  describe("split pane", () => {
-    it("splitSession creates vertical split with primarySid", () => {
-      getState().addProject("p", "/p");
-      getState().addSession("s2");
-      const proj = getState().projects[0];
-      const s1id = proj.sessions[0].id;
-      const s2id = proj.sessions[1].id;
-      getState().setActiveSession(s1id);
-      getState().splitSession(s2id);
-      const layout = getState().splitLayout;
-      expect(layout.type).toBe("vertical");
-      expect(layout.primarySid).toBe(s1id);
-      expect(layout.secondarySid).toBe(s2id);
-      expect(layout.ratio).toBe(0.5);
-    });
-
-    it("unsplit resets to none", () => {
-      getState().addProject("p", "/p");
-      getState().addSession("s2");
-      const s2id = getState().projects[0].sessions[1].id;
-      getState().splitSession(s2id);
-      getState().unsplit();
-      expect(getState().splitLayout.type).toBe("none");
-    });
-
-    it("setFocusedPane toggles pane", () => {
-      getState().addProject("p", "/p");
-      getState().setFocusedPane("secondary");
-      expect(getState().focusedPane).toBe("secondary");
-      getState().setFocusedPane("primary");
-      expect(getState().focusedPane).toBe("primary");
-    });
-
-    it("setSplitRatio updates ratio", () => {
-      getState().addProject("p", "/p");
-      getState().setSplitRatio(0.7);
-      expect(getState().splitLayout.ratio).toBe(0.7);
     });
   });
 

@@ -58,6 +58,7 @@ pub fn validate_path_within(base_dir: &str, target: &str) -> Result<String, Stri
 }
 
 /// Validate that project_dir is an existing directory.
+#[allow(dead_code)]
 pub fn validate_project_dir(dir: &str) -> Result<(), String> {
     if !std::path::Path::new(dir).is_dir() {
         return Err(format!("Repertoire projet introuvable : {dir}"));
@@ -82,6 +83,7 @@ pub fn validate_filename(name: &str) -> Result<(), String> {
 }
 
 /// Validate that a file path stays within the project directory (block path traversal).
+#[allow(dead_code)]
 pub fn validate_file_in_project(project_dir: &str, file_path: &str) -> Result<(), String> {
     if file_path.contains("..") {
         return Err("Chemin de fichier invalide".to_string());

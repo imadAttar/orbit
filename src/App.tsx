@@ -3,7 +3,6 @@ import { useStore, selectActiveProject, selectActiveSession } from "./core/store
 import { trackEvent } from "./lib/analytics";
 import { useT } from "./i18n/i18n";
 import TerminalView from "./features/terminal/Terminal";
-import SplitPane from "./features/terminal/SplitPane";
 import ContextBar from "./layout/ContextBar";
 import ErrorBoundary from "./shared/ErrorBoundary";
 import TabBar from "./layout/TabBar";
@@ -57,7 +56,6 @@ export default function App() {
   const activePid = useStore((s) => s.activePid);
   const activeSid = useStore((s) => s.activeSid);
   const loaded = useStore((s) => s.loaded);
-  const splitLayout = useStore((s) => s.splitLayout);
   // Stable selectors — return same ref if project/session unchanged
   const activeProject = useStore(selectActiveProject);
   const activeSession = useStore(selectActiveSession);
@@ -142,8 +140,6 @@ export default function App() {
   mountedSidsRef.current.add(activeSid);
   const mountedSids = mountedSidsRef.current;
 
-  const isSplit = splitLayout.type !== "none" && splitLayout.secondarySid;
-
   return (
     <div className="app">
       <TabBar
@@ -161,12 +157,7 @@ export default function App() {
           <ErrorBoundary>
             <div className="terminal-area__body">
               <div className="terminal-area__terminals">
-                {isSplit && (
-                  <SplitPane primarySid={splitLayout.primarySid || activeSid} secondarySid={splitLayout.secondarySid!}
-                    projectDir={activeProject.dir} ratio={splitLayout.ratio} searchOpen={ui.searchOpen}
-                    onSearchClose={() => dispatch({ type: "set", field: "searchOpen", value: false })} />
-                )}
-                {!isSplit && projects.flatMap((p) =>
+                {projects.flatMap((p) =>
                     p.sessions.filter((s) => mountedSids.has(s.id)).map((s) => (
                       <TerminalView key={s.id} sessionId={s.id} projectDir={p.dir}
                         active={s.id === activeSid}

@@ -65,10 +65,6 @@
   "shortcuts.navigation": "Navigation",
   "shortcuts.searchTerminal": "Search in terminal",
   "shortcuts.preferences": "Preferences",
-  "shortcuts.split": "Split",
-  "shortcuts.splitToggle": "Split / unsplit",
-  "shortcuts.focusNext": "Focus next pane",
-  "shortcuts.focusPrev": "Focus previous pane",
   "shortcuts.misc": "Misc",
   "shortcuts.zoomIn": "Increase size",
   "shortcuts.zoomOut": "Decrease size",
@@ -114,7 +110,6 @@
   "error.sendReport": "Send report",
   "error.sending": "Sending...",
   "error.sent": "Report sent",
-  "statusbar.split": "Split",
   "contextbar.label": "Context",
   "terminal.error": "Error: {message}"
 }

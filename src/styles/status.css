@@ -106,14 +106,3 @@
   letter-spacing: 0.05em;
 }
 
-.status-bar__badge {
-  background: var(--accent);
-  color: var(--bg);
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 8px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-}
-

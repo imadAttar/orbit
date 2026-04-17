@@ -41,26 +41,6 @@ export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCall
   } else if (mod && e.key === "-") {
     e.preventDefault();
     if (state.settings.fontSize > 8) state.setFontSize(state.settings.fontSize - 1);
-  } else if (mod && e.key === "\\") {
-    e.preventDefault();
-    if (state.splitLayout.type !== "none") {
-      state.unsplit();
-      trackEvent("split_destroyed");
-    } else {
-      const proj = state.projects.find((p) => p.id === state.activePid);
-      if (proj && proj.sessions.length > 1) {
-        const otherSession = proj.sessions.find((s) => s.id !== state.activeSid);
-        if (otherSession) {
-          state.splitSession(otherSession.id);
-          trackEvent("split_created");
-        }
-      }
-    }
-  } else if (mod && (e.key === "]" || e.key === "[")) {
-    e.preventDefault();
-    if (state.splitLayout.type !== "none") {
-      state.setFocusedPane(state.focusedPane === "primary" ? "secondary" : "primary");
-    }
   } else if (e.ctrlKey && !e.metaKey && e.key >= "1" && e.key <= "9") {
     e.preventDefault();
     const idx = parseInt(e.key) - 1;

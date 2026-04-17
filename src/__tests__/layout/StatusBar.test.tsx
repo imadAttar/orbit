@@ -38,7 +38,6 @@ function setupStore(overrides: Record<string, unknown> = {}) {
       fontSize: 14, sidebarWidth: 220, analytics: true, statuslineAsked: false,
       autoUpdate: true, autoNotifications: true, defaultMode: "normal" as const, language: "fr" as const,
     },
-    splitLayout: { type: "none" as const, primarySid: "", ratio: 0.5 },
     ...overrides,
   });
 }
@@ -70,14 +69,4 @@ describe("StatusBar", () => {
     expect(container.querySelector(".status-bar__cost")).toBeNull();
   });
 
-  it("shows Split badge when isSplit", () => {
-    setupStore({ splitLayout: { type: "vertical", primarySid: "s1", secondarySid: "s2", ratio: 0.5 } });
-    const { getByText } = render(<StatusBar />);
-    expect(getByText("statusbar.split")).toBeTruthy();
-  });
-
-  it("does not show Split badge when not split", () => {
-    const { container } = render(<StatusBar />);
-    expect(container.querySelector(".status-bar__badge")).toBeNull();
-  });
 });
