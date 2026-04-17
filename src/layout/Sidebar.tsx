@@ -166,6 +166,7 @@ const SessionItem = memo(function SessionItem({
   session, idx, isActive, isDragOver, isFlashing, isRenaming, canDelete,
   onClick, onDragOver, onDrop, onRename, onRenameStart, onRenameCancel, onClose, onContextMenu,
 }: SessionItemProps) {
+  const closingRef = useRef(false);
   // Targeted selectors — only re-render when THIS session's state/cost changes
   const dotClass = useStore((s) => {
     if (session.type === "terminal") return "";
@@ -214,8 +215,8 @@ const SessionItem = memo(function SessionItem({
                 role="button"
                 tabIndex={0}
                 className="session-item__close"
-                onClick={(e) => { e.stopPropagation(); onClose(session.id); trackEvent("session_closed"); }}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onClose(session.id); } }}
+                onClick={(e) => { e.stopPropagation(); if (closingRef.current) return; closingRef.current = true; onClose(session.id); trackEvent("session_closed"); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); if (closingRef.current) return; closingRef.current = true; onClose(session.id); } }}
               >
                 &times;
               </span>
