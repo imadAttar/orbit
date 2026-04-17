@@ -2,14 +2,37 @@ name: Release
 
 on:
   push:
-    tags: ["*.*.*"]
+    tags: ["v*"]
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    name: Typecheck & Tests
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 25
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
+
   build:
+    needs: check
     strategy:
       fail-fast: false
       matrix:
@@ -68,12 +91,6 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
-
-      - name: Typecheck
-        run: npx tsc --noEmit
-
-      - name: Run tests
-        run: npm test
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
