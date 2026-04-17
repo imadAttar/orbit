@@ -27,7 +27,7 @@ vi.mock("../../lib/analytics", () => ({
   setAnalyticsEnabled: vi.fn(),
 }));
 vi.mock("../../core/api", () => ({
-  claude: { isInstalled: () => mockIsInstalled() },
+  claude: { isInstalled: () => mockIsInstalled(), enableSessionHooks: vi.fn().mockResolvedValue(false) },
   statusline: { has: () => mockHasStatusline() },
   listen: (...args: unknown[]) => mockListen(...args),
   pty: { spawn: vi.fn(), write: vi.fn(), kill: vi.fn(), killSilent: vi.fn(), resize: vi.fn() },
@@ -67,7 +67,7 @@ describe("useAppInit", () => {
         sidebarWidth: 200,
         analytics: true,
         statuslineAsked: false,
-        autoUpdate: true,
+        autoUpdate: true, autoNotifications: true,
         defaultMode: "normal",
         language: "fr",
       },

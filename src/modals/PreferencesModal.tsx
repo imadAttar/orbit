@@ -14,6 +14,7 @@ interface PrefsState {
   fontSize: number;
   analytics: boolean;
   autoUpdate: boolean;
+  autoNotifications: boolean;
   language: Language;
   defaultMode: SessionMode;
   tab: Tab;
@@ -41,6 +42,7 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
     fontSize: settings.fontSize,
     analytics: settings.analytics,
     autoUpdate: settings.autoUpdate,
+    autoNotifications: settings.autoNotifications,
     language: settings.language,
     defaultMode: settings.defaultMode,
     tab: "appearance",
@@ -57,6 +59,7 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
       fontSize: Math.max(8, Math.min(20, prefs.fontSize)),
       analytics: prefs.analytics,
       autoUpdate: prefs.autoUpdate,
+      autoNotifications: prefs.autoNotifications,
       language: prefs.language,
       defaultMode: prefs.defaultMode,
     });
@@ -65,6 +68,7 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
     if (prefs.fontSize !== settings.fontSize) trackEvent("font_size_changed", { from: settings.fontSize, to: prefs.fontSize });
     if (prefs.language !== settings.language) trackEvent("language_changed", { from: settings.language, to: prefs.language });
     if (prefs.defaultMode !== settings.defaultMode) trackEvent("default_mode_changed", { from: settings.defaultMode, to: prefs.defaultMode });
+    if (prefs.autoNotifications !== settings.autoNotifications) trackEvent("auto_notifications_changed", { enabled: prefs.autoNotifications ? 1 : 0 });
     trackEvent("preferences_saved", { theme: prefs.theme, fontSize: prefs.fontSize, language: prefs.language, defaultMode: prefs.defaultMode });
     onClose();
   };
@@ -137,6 +141,13 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
                   <option value="yolo">{t("prefs.modeYolo")}</option>
                 </select>
                 <div className="modal__hint">{t("prefs.defaultModeHint")}</div>
+              </label>
+              <label className="modal__label modal__toggle-row">
+                <div>
+                  <span>{t("prefs.autoNotifications")}</span>
+                  <div className="modal__hint">{t("prefs.autoNotificationsHint")}</div>
+                </div>
+                <input type="checkbox" checked={prefs.autoNotifications} onChange={(e) => dispatch({ type: "set", field: "autoNotifications", value: e.target.checked })} className="modal__checkbox" />
               </label>
             </div>
           )}

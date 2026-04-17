@@ -36,7 +36,7 @@ function setupStore(overrides: Record<string, unknown> = {}) {
     settings: {
       terminal: "default" as const, editor: "vscode" as const, theme: "orbit" as const,
       fontSize: 14, sidebarWidth: 220, analytics: true, statuslineAsked: false,
-      autoUpdate: true, defaultMode: "normal" as const, language: "fr" as const,
+      autoUpdate: true, autoNotifications: true, defaultMode: "normal" as const, language: "fr" as const,
     },
     splitLayout: { type: "none" as const, primarySid: "", ratio: 0.5 },
     ...overrides,

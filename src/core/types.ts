@@ -50,4 +50,5 @@ export type Settings = {
   autoUpdate: boolean;
   defaultMode: SessionMode;
   language: Language;
+  autoNotifications: boolean;
 };

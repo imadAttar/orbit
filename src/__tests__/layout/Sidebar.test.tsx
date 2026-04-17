@@ -50,7 +50,7 @@ function setupStore(overrides: Record<string, unknown> = {}) {
       sidebarWidth: 220,
       analytics: true,
       statuslineAsked: false,
-      autoUpdate: true,
+      autoUpdate: true, autoNotifications: true,
       defaultMode: "normal" as const,
       language: "fr" as const,
     },

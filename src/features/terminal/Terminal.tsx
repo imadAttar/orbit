@@ -1,8 +1,6 @@
 import { useEffect, useRef, useReducer, memo } from "react";
 import { useStore } from "../../core/store";
 import { trackEvent } from "../../lib/analytics";
-import { claude } from "../../core/api";
-import { logger } from "../../lib/logger";
 import { useT } from "../../i18n/i18n";
 import { usePTY } from "./hooks/usePTY";
 import { usePromptNav } from "./hooks/usePromptNav";
@@ -164,17 +162,7 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
           {canDelete && (
               <button
                 className="session-restore__btn session-restore__btn--delete"
-                onClick={async () => {
-                  try {
-                    const session = useStore.getState().projects
-                      .flatMap((p) => p.sessions)
-                      .find((s) => s.id === sessionId);
-                    if (session?.claudeSessionId) {
-                      await claude.deleteSession(projectDir, session.claudeSessionId);
-                    }
-                  } catch (err) {
-                    logger.error("terminal", `Failed to delete session: ${err}`);
-                  }
+                onClick={() => {
                   useStore.getState().removeSession(sessionId);
                   trackEvent("session_deleted");
                 }}

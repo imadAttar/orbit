@@ -108,8 +108,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             claude::check_claude_installed,
             claude::install_claude,
-            claude::delete_claude_session,
             claude::generate_title,
+            claude::enable_session_hooks,
+            claude::check_session_hooks,
             statusline::has_statusline,
             statusline::create_statusline,
             pty::spawn_pty,

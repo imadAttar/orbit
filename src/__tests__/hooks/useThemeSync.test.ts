@@ -53,7 +53,7 @@ describe("useThemeSync", () => {
         sidebarWidth: 200,
         analytics: true,
         statuslineAsked: false,
-        autoUpdate: true,
+        autoUpdate: true, autoNotifications: true,
         defaultMode: "normal",
         language: "fr",
       },
