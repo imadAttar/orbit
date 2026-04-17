@@ -103,16 +103,26 @@ jobs:
         run: |
           mkdir -p artifacts/installers artifacts/updater
           BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          ARCH="${{ matrix.target }}"
           if [ -d "$BUNDLE_DIR" ]; then
             # User-facing installers
             find "$BUNDLE_DIR" -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.msi" \) -exec cp {} artifacts/installers/ \;
-            # Updater files (tar.gz + signatures)
-            find "$BUNDLE_DIR" -type f \( -name "*.tar.gz" -o -name "*.sig" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \) -exec cp {} artifacts/updater/ \;
+            # Updater files — rename macOS artifacts to include architecture
+            for f in $(find "$BUNDLE_DIR" -type f \( -name "*.tar.gz" -o -name "*.nsis.zip" \) ! -name "*.sig"); do
+              base=$(basename "$f")
+              if echo "$base" | grep -q "Orbit.app"; then
+                cp "$f" "artifacts/updater/Orbit_${ARCH}.app.tar.gz"
+                [ -f "$f.sig" ] && cp "$f.sig" "artifacts/updater/Orbit_${ARCH}.app.tar.gz.sig"
+              else
+                cp "$f" "artifacts/updater/"
+                [ -f "$f.sig" ] && cp "$f.sig" "artifacts/updater/"
+              fi
+            done
           fi
           echo "--- Installers ---"
-          ls -la artifacts/installers/
+          ls -la artifacts/installers/ 2>/dev/null || echo "(empty)"
           echo "--- Updater ---"
-          ls -la artifacts/updater/
+          ls -la artifacts/updater/ 2>/dev/null || echo "(empty)"
 
       - name: Upload installers
         uses: actions/upload-artifact@v7
@@ -168,6 +178,10 @@ jobs:
             local pattern="$1"
             find artifacts -name "$pattern" ! -name "*.sig" 2>/dev/null | head -1 | xargs -I{} basename {}
           }
+
+          # Debug: show all downloaded artifacts
+          echo "--- All artifacts ---"
+          find artifacts -type f | sort
 
           MACOS_ARM64=$(find_artifact "*aarch64*apple*.tar.gz")
           MACOS_ARM64_SIG=$(read_sig "*aarch64*apple*.tar.gz")
