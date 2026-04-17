@@ -280,23 +280,30 @@ export const useStore = create<AppStore>((set, get) => ({
     }),
 
   removeSession: (sid) => {
-    // Guard first: only kill PTY if the session can actually be removed
     const current = get();
     const currentProj = current.projects.find((p) => p.id === current.activePid);
-    if (!currentProj || currentProj.sessions.length <= 1) return;
+    if (!currentProj) return;
     // Kill PTY BEFORE state update to prevent race with new spawn
     pty.killSilent(sid);
     clearScrollback(sid);
     set((s) => {
       const proj = s.projects.find((p) => p.id === s.activePid);
-      if (!proj || proj.sessions.length <= 1) return s;
-      let activeSid = s.activeSid;
-      if (s.activeSid === sid) {
+      if (!proj) return s;
+      const isLast = proj.sessions.length <= 1;
+      const freshSession = isLast ? makeSession("main") : null;
+      let activeSid: string;
+      if (isLast && freshSession) {
+        activeSid = freshSession.id;
+      } else if (s.activeSid === sid) {
         const idx = proj.sessions.findIndex((ss) => ss.id === sid);
         const neighbor = idx > 0 ? idx - 1 : 1;
         activeSid = proj.sessions[neighbor].id;
+      } else {
+        activeSid = s.activeSid;
       }
-      const sessions = proj.sessions.filter((ss) => ss.id !== sid);
+      const sessions = isLast && freshSession
+        ? [freshSession]
+        : proj.sessions.filter((ss) => ss.id !== sid);
       const projects = s.projects.map((p) =>
         p.id === s.activePid ? { ...p, sessions } : p
       );

@@ -172,7 +172,7 @@ describe("App keyboard shortcuts", () => {
       window.removeEventListener("test:confirmDeleteSession", spy);
     });
 
-    it("should not trigger when only one session exists", () => {
+    it("should trigger even when only one session exists", () => {
       // Remove sessions until only one remains
       const proj = getState().projects[0];
       for (let i = proj.sessions.length - 1; i > 0; i--) {
@@ -181,7 +181,7 @@ describe("App keyboard shortcuts", () => {
       const spy = vi.fn();
       window.addEventListener("test:confirmDeleteSession", spy);
       fire("w", { metaKey: true });
-      expect(spy).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledTimes(1);
       window.removeEventListener("test:confirmDeleteSession", spy);
     });
   });
