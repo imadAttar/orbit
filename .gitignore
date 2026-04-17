@@ -24,7 +24,7 @@ Thumbs.db
 src-tauri/gen/
 src-tauri/WixTools/
 artifacts/
-# Claude Code config (internal tooling)
+# Editor config
 .claude/
 CLAUDE.md
 CLAUDE.local.md
