@@ -27,7 +27,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1N0VFQTNCNjRGRTQzQTEKUldTaFEvNWtPK3ArNVRGSk1ScTBqZVNBblA4aTV3eXZjOHR3bVJ5Z3ZhQXdKd1BPaXIxaUQrQ3YK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXkgN0M1NkM3REFFNTlDRDc0MApSV1JBMTV6bDJzZFdmT3Vpa3R1QWNuTFd5aVJwMVhQdWNpTUw3RGdWYkllQnZLUVIvNUsvZ1NMTwo=",
       "endpoints": [
         "https://github.com/imadAttar/orbit/releases/latest/download/latest.json"
       ]
