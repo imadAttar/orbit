@@ -52,8 +52,7 @@ export default function Sidebar({ onContextMenu }: Props) {
 
   const claudeSessions = useMemo(() => activeProject?.sessions.filter((s) => s.type !== "terminal") ?? [], [activeProject?.sessions]);
   const terminalSessions = useMemo(() => activeProject?.sessions.filter((s) => s.type === "terminal") ?? [], [activeProject?.sessions]);
-  const allSessions = activeProject?.sessions ?? [];
-  const canDelete = allSessions.length > 1;
+  const canDelete = true;
 
   const handleSessionClick = useCallback((sid: string) => {
     if (sid !== useStore.getState().activeSid) { setActiveSession(sid); trackEvent("session_switched"); }
