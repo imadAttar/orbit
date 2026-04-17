@@ -25,10 +25,7 @@ export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCall
     trackEvent("session_created");
   } else if (mod && e.key === "w") {
     e.preventDefault();
-    const proj = state.projects.find((p) => p.id === state.activePid);
-    if (proj && proj.sessions.length > 1) {
-      callbacks.confirmDeleteSession(state.activeSid);
-    }
+    callbacks.confirmDeleteSession(state.activeSid);
   } else if (mod && e.key === "f") {
     e.preventDefault();
     callbacks.toggleSearch();

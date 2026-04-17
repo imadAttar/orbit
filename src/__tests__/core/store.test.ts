@@ -137,11 +137,14 @@ describe("store", () => {
       expect(getState().activeSid).toBe(s2id);
     });
 
-    it("does not remove the last session", () => {
+    it("replaces last session with a fresh one", () => {
       getState().addProject("p", "/p");
-      const sid = getState().projects[0].sessions[0].id;
-      getState().removeSession(sid);
-      expect(getState().projects[0].sessions).toHaveLength(1);
+      const oldSid = getState().projects[0].sessions[0].id;
+      getState().removeSession(oldSid);
+      const sessions = getState().projects[0].sessions;
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].id).not.toBe(oldSid);
+      expect(sessions[0].name).toBe("main");
     });
   });
 

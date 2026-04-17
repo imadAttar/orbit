@@ -118,11 +118,6 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
     dp({ type: "setMode", value: "normal" });
   }, [isTerminalSession, ts.modeChoice]);
 
-  // Can this session be deleted?
-  const canDelete = useStore((s) => {
-    const proj = s.projects.find((p) => p.sessions.some((sess) => sess.id === sessionId));
-    return proj ? proj.sessions.length > 1 : false;
-  });
 
   // Focus terminal when active (and search not open)
   useEffect(() => {
@@ -159,17 +154,15 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
           >
             {t("session.freshStart")}
           </button>
-          {canDelete && (
-              <button
-                className="session-restore__btn session-restore__btn--delete"
-                onClick={() => {
-                  useStore.getState().removeSession(sessionId);
-                  trackEvent("session_deleted");
-                }}
-              >
-                {t("session.deleteBtn")}
-              </button>
-          )}
+          <button
+            className="session-restore__btn session-restore__btn--delete"
+            onClick={() => {
+              useStore.getState().removeSession(sessionId);
+              trackEvent("session_deleted");
+            }}
+          >
+            {t("session.deleteBtn")}
+          </button>
         </div>
       )}
       {/* Mode picker — Claude sessions only */}

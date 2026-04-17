@@ -183,7 +183,7 @@ export default function App() {
             <div className="context-menu" role="menu" style={contextMenuStyle} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
               <button className="context-menu__item" onClick={() => { window.dispatchEvent(new CustomEvent("rename-session", { detail: { sessionId: ui.contextMenu!.sid } })); dispatch({ type: "set", field: "contextMenu", value: null }); }}>{t("session.rename")}</button>
               <button className="context-menu__item" onClick={() => { window.dispatchEvent(new CustomEvent("reset-session", { detail: { sessionId: ui.contextMenu!.sid } })); trackEvent("session_reset"); dispatch({ type: "set", field: "contextMenu", value: null }); }}>{t("session.reset")}</button>
-              {activeProject.sessions.length > 1 && <button className="context-menu__item context-menu__item--danger" onClick={() => { dispatch({ type: "set", field: "confirmDeleteSession", value: ui.contextMenu!.sid }); dispatch({ type: "set", field: "contextMenu", value: null }); }}>{t("common.delete")}</button>}
+              <button className="context-menu__item context-menu__item--danger" onClick={() => { dispatch({ type: "set", field: "confirmDeleteSession", value: ui.contextMenu!.sid }); dispatch({ type: "set", field: "contextMenu", value: null }); }}>{t("common.delete")}</button>
             </div>
           </div>
         )}
