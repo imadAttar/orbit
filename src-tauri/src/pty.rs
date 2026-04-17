@@ -348,9 +348,13 @@ pub fn kill_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), St
         if let Err(e) = session.child.kill() {
             tracing::warn!(session_id = %session_id, "Failed to kill PTY child: {e}");
         }
-        if let Err(e) = session.child.wait() {
-            tracing::warn!(session_id = %session_id, "Failed to wait on PTY child: {e}");
-        }
+        // Wait in background thread to avoid blocking the main thread / UI
+        let sid = session_id.clone();
+        thread::spawn(move || {
+            if let Err(e) = session.child.wait() {
+                tracing::warn!(session_id = %sid, "Failed to wait on PTY child: {e}");
+            }
+        });
     }
     Ok(())
 }
