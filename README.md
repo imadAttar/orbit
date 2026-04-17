@@ -47,7 +47,6 @@ The hooks write session state to `~/.orbit/session-state.json`, which Orbit watc
 | Platform | Download |
 |----------|----------|
 | macOS (Apple Silicon) | [.dmg](https://github.com/imadAttar/orbit/releases/latest) |
-| macOS (Intel) | [.dmg](https://github.com/imadAttar/orbit/releases/latest) |
 | Windows | [.msi](https://github.com/imadAttar/orbit/releases/latest) |
 | Linux | [.deb / .AppImage](https://github.com/imadAttar/orbit/releases/latest) |
 
