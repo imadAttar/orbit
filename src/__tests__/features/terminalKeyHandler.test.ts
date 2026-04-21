@@ -266,3 +266,92 @@ describe("createTerminalKeyEventHandler — Windows Ctrl+V paste", () => {
     expect(readText).not.toHaveBeenCalled();
   });
 });
+
+describe("createTerminalKeyEventHandler — macOS regression", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doMock("../../lib/platform", () => ({
+      isWindows: false,
+      isMac: true,
+      isLinux: false,
+    }));
+  });
+
+  it("does not intercept Ctrl+C with selection on macOS (xterm keeps emitting \\x03)", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const handler = factory({
+      sid: "s1",
+      term: {
+        hasSelection: vi.fn(() => true),
+        getSelection: vi.fn(() => "hello"),
+        clearSelection: vi.fn(),
+      } as TerminalKeyHandlerDeps["term"],
+      pty: { write: vi.fn() } as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText,
+      readText: vi.fn().mockResolvedValue(""),
+    });
+    expect(handler(makeEvent({ key: "c", ctrlKey: true }))).toBe(true);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("does not intercept Ctrl+V on macOS", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const readText = vi.fn().mockResolvedValue("x");
+    const pty = { write: vi.fn() };
+    const handler = factory({
+      sid: "s1",
+      term: {
+        hasSelection: vi.fn(() => false),
+        getSelection: vi.fn(() => ""),
+        clearSelection: vi.fn(),
+      } as TerminalKeyHandlerDeps["term"],
+      pty: pty as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText: vi.fn().mockResolvedValue(undefined),
+      readText,
+    });
+    expect(handler(makeEvent({ key: "v", ctrlKey: true }))).toBe(true);
+    expect(readText).not.toHaveBeenCalled();
+    expect(pty.write).not.toHaveBeenCalled();
+  });
+});
+
+describe("createTerminalKeyEventHandler — Linux regression", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doMock("../../lib/platform", () => ({
+      isWindows: false,
+      isMac: false,
+      isLinux: true,
+    }));
+  });
+
+  it("does not intercept Ctrl+C with selection on Linux", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const handler = factory({
+      sid: "s1",
+      term: {
+        hasSelection: vi.fn(() => true),
+        getSelection: vi.fn(() => "hello"),
+        clearSelection: vi.fn(),
+      } as TerminalKeyHandlerDeps["term"],
+      pty: { write: vi.fn() } as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText,
+      readText: vi.fn().mockResolvedValue(""),
+    });
+    expect(handler(makeEvent({ key: "c", ctrlKey: true }))).toBe(true);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+});
