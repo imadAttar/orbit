@@ -1,16 +1,21 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
+import { isWindows } from "../../../lib/platform";
 
 export type JumpDirection = "prev" | "next";
 
 export type TerminalKeyHandlerDeps = {
   /** Reserved for Windows clipboard branches (Task 4/5); current handler doesn't read it. */
   sid: string;
-  /** Reserved for Windows clipboard branches (Task 4/5); current handler doesn't read it. */
+  /** xterm terminal instance used for selection queries and clipboard operations. */
   term: Pick<XTerm, "hasSelection" | "getSelection" | "clearSelection">;
   /** Reserved for Windows clipboard branches (Task 4/5); current handler doesn't read it. */
   pty: { write: (sid: string, data: string) => Promise<void> | void };
   /** Called with the direction to navigate between Claude Code prompts in the scrollback. */
   jumpPrompt: (dir: JumpDirection) => void;
+  /** Tauri clipboard-manager writeText (Windows Ctrl+C copy branch). */
+  writeText: (text: string) => Promise<void>;
+  /** Tauri clipboard-manager readText (Windows Ctrl+V paste branch — Task 5). */
+  readText: () => Promise<string | null>;
 };
 
 /**
@@ -23,7 +28,7 @@ export type TerminalKeyHandlerDeps = {
 export function createTerminalKeyEventHandler(
   deps: TerminalKeyHandlerDeps,
 ): (e: KeyboardEvent) => boolean {
-  const { jumpPrompt } = deps;
+  const { term, jumpPrompt, writeText } = deps;
 
   return (e: KeyboardEvent): boolean => {
     // Prompt navigation: Cmd/Ctrl + ArrowUp/ArrowDown
@@ -33,6 +38,28 @@ export function createTerminalKeyEventHandler(
       jumpPrompt(e.key === "ArrowUp" ? "prev" : "next");
       return false;
     }
+
+    // Windows: Ctrl+C with selection → copy, suppress SIGINT.
+    // Only clean Ctrl+C — Shift/Alt/Meta modifiers pass through.
+    if (
+      isWindows &&
+      e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      e.key === "c" &&
+      term.hasSelection()
+    ) {
+      const text = term.getSelection();
+      void writeText(text).catch((err: unknown) => {
+        import("../../../lib/logger").then(({ logger }) =>
+          logger.warn("clipboard", `writeText failed: ${err}`),
+        );
+      });
+      term.clearSelection();
+      return false;
+    }
+
     return true;
   };
 }
