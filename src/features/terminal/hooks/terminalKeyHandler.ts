@@ -28,7 +28,7 @@ export type TerminalKeyHandlerDeps = {
 export function createTerminalKeyEventHandler(
   deps: TerminalKeyHandlerDeps,
 ): (e: KeyboardEvent) => boolean {
-  const { term, jumpPrompt, writeText } = deps;
+  const { sid, term, pty, jumpPrompt, writeText, readText } = deps;
 
   return (e: KeyboardEvent): boolean => {
     // Prompt navigation: Cmd/Ctrl + ArrowUp/ArrowDown
@@ -57,6 +57,29 @@ export function createTerminalKeyEventHandler(
         );
       });
       term.clearSelection();
+      return false;
+    }
+
+    // Windows: Ctrl+V → paste clipboard contents into the PTY. Clean modifiers only.
+    if (
+      isWindows &&
+      e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      e.key === "v"
+    ) {
+      void (async () => {
+        try {
+          const text = await readText();
+          if (text != null && text.length > 0) {
+            await pty.write(sid, text);
+          }
+        } catch (err) {
+          const { logger } = await import("../../../lib/logger");
+          logger.warn("clipboard", `readText failed: ${err}`);
+        }
+      })();
       return false;
     }
 

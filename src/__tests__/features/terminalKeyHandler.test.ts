@@ -177,3 +177,92 @@ describe("createTerminalKeyEventHandler — Windows Ctrl+C copy", () => {
     expect(writeText).not.toHaveBeenCalled();
   });
 });
+
+describe("createTerminalKeyEventHandler — Windows Ctrl+V paste", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doMock("../../lib/platform", () => ({
+      isWindows: true,
+      isMac: false,
+      isLinux: false,
+    }));
+  });
+
+  it("reads clipboard and writes to PTY on Ctrl+V", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const pty = { write: vi.fn().mockResolvedValue(undefined) };
+    const readText = vi.fn().mockResolvedValue("pasted text");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const handler = factory({
+      sid: "sid-123",
+      term: {
+        hasSelection: vi.fn(() => false),
+        getSelection: vi.fn(() => ""),
+        clearSelection: vi.fn(),
+      } as TerminalKeyHandlerDeps["term"],
+      pty: pty as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText,
+      readText,
+    });
+
+    const result = handler(makeEvent({ key: "v", ctrlKey: true }));
+
+    expect(result).toBe(false);
+    await vi.waitFor(() => expect(readText).toHaveBeenCalled());
+    await vi.waitFor(() =>
+      expect(pty.write).toHaveBeenCalledWith("sid-123", "pasted text"),
+    );
+  });
+
+  it("does not call pty.write when clipboard is empty/null", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const pty = { write: vi.fn() };
+    const readText = vi.fn().mockResolvedValue(null);
+    const handler = factory({
+      sid: "sid-123",
+      term: {
+        hasSelection: vi.fn(() => false),
+        getSelection: vi.fn(() => ""),
+        clearSelection: vi.fn(),
+      } as TerminalKeyHandlerDeps["term"],
+      pty: pty as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText: vi.fn().mockResolvedValue(undefined),
+      readText,
+    });
+
+    const result = handler(makeEvent({ key: "v", ctrlKey: true }));
+
+    expect(result).toBe(false);
+    await vi.waitFor(() => expect(readText).toHaveBeenCalled());
+    expect(pty.write).not.toHaveBeenCalled();
+  });
+
+  it("ignores Ctrl+Shift+V / Ctrl+Alt+V (let xterm handle)", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const readText = vi.fn().mockResolvedValue("nope");
+    const handler = factory({
+      sid: "sid-123",
+      term: {
+        hasSelection: vi.fn(() => false),
+        getSelection: vi.fn(() => ""),
+        clearSelection: vi.fn(),
+      } as TerminalKeyHandlerDeps["term"],
+      pty: { write: vi.fn() } as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText: vi.fn().mockResolvedValue(undefined),
+      readText,
+    });
+    expect(handler(makeEvent({ key: "v", ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(handler(makeEvent({ key: "v", ctrlKey: true, altKey: true }))).toBe(true);
+    expect(readText).not.toHaveBeenCalled();
+  });
+});
