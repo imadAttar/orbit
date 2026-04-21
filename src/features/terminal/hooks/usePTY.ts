@@ -275,6 +275,9 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             term,
             pty,
             jumpPrompt: (dir) => jumpRef.current(dir),
+            // Clipboard functions — wired to Tauri clipboard-manager in Task 6.
+            writeText: () => Promise.resolve(),
+            readText: () => Promise.resolve(null),
           }),
         );
       } catch (err) {

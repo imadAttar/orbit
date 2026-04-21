@@ -3,6 +3,8 @@ import type { TerminalKeyHandlerDeps } from "../../features/terminal/hooks/termi
 import { createTerminalKeyEventHandler } from "../../features/terminal/hooks/terminalKeyHandler";
 
 // Pre-mocked for Task 4/5 Windows-clipboard branches; current handler doesn't read platform.
+// Note: Windows/macOS/Linux suites override this default via vi.doMock + vi.resetModules
+// inside their beforeEach to swap platform flags at test time.
 vi.mock("../../lib/platform", () => ({
   isWindows: false,
   isMac: false,
@@ -29,6 +31,8 @@ describe("createTerminalKeyEventHandler — prompt navigation", () => {
   };
   const pty = { write: vi.fn() };
   const jumpPrompt = vi.fn();
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const readText = vi.fn().mockResolvedValue("");
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -40,6 +44,8 @@ describe("createTerminalKeyEventHandler — prompt navigation", () => {
       term: term as TerminalKeyHandlerDeps["term"],
       pty: pty as TerminalKeyHandlerDeps["pty"],
       jumpPrompt,
+      writeText,
+      readText,
     });
     const e = makeEvent({ key: "ArrowUp", ctrlKey: true });
     const result = handler(e);
@@ -55,6 +61,8 @@ describe("createTerminalKeyEventHandler — prompt navigation", () => {
       term: term as TerminalKeyHandlerDeps["term"],
       pty: pty as TerminalKeyHandlerDeps["pty"],
       jumpPrompt,
+      writeText,
+      readText,
     });
     const e = makeEvent({ key: "ArrowDown", metaKey: true });
     const result = handler(e);
@@ -68,10 +76,104 @@ describe("createTerminalKeyEventHandler — prompt navigation", () => {
       term: term as TerminalKeyHandlerDeps["term"],
       pty: pty as TerminalKeyHandlerDeps["pty"],
       jumpPrompt,
+      writeText,
+      readText,
     });
     expect(handler(makeEvent({ key: "a" }))).toBe(true);
     expect(handler(makeEvent({ key: "Enter" }))).toBe(true);
     expect(handler(makeEvent({ key: "c", ctrlKey: true }))).toBe(true);
     expect(jumpPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe("createTerminalKeyEventHandler — Windows Ctrl+C copy", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doMock("../../lib/platform", () => ({
+      isWindows: true,
+      isMac: false,
+      isLinux: false,
+    }));
+  });
+
+  it("copies the selection and blocks \\x03 when selection is non-empty", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const term = {
+      hasSelection: vi.fn(() => true),
+      getSelection: vi.fn(() => "hello"),
+      clearSelection: vi.fn(),
+    };
+    const pty = { write: vi.fn() };
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const readText = vi.fn().mockResolvedValue("");
+    const handler = factory({
+      sid: "s1",
+      term: term as TerminalKeyHandlerDeps["term"],
+      pty: pty as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText,
+      readText,
+    });
+
+    const result = handler(makeEvent({ key: "c", ctrlKey: true }));
+
+    expect(writeText).toHaveBeenCalledWith("hello");
+    expect(term.clearSelection).toHaveBeenCalled();
+    expect(pty.write).not.toHaveBeenCalled();
+    expect(result).toBe(false);
+  });
+
+  it("lets Ctrl+C through to xterm (SIGINT path) when no selection", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const term = {
+      hasSelection: vi.fn(() => false),
+      getSelection: vi.fn(() => ""),
+      clearSelection: vi.fn(),
+    };
+    const pty = { write: vi.fn() };
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const readText = vi.fn().mockResolvedValue("");
+    const handler = factory({
+      sid: "s1",
+      term: term as TerminalKeyHandlerDeps["term"],
+      pty: pty as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText,
+      readText,
+    });
+
+    const result = handler(makeEvent({ key: "c", ctrlKey: true }));
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(result).toBe(true);
+  });
+
+  it("ignores Ctrl+Shift+C / Ctrl+Alt+C / Ctrl+Meta+C (let xterm handle)", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import(
+      "../../features/terminal/hooks/terminalKeyHandler"
+    );
+    const term = {
+      hasSelection: vi.fn(() => true),
+      getSelection: vi.fn(() => "hello"),
+      clearSelection: vi.fn(),
+    };
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const handler = factory({
+      sid: "s1",
+      term: term as TerminalKeyHandlerDeps["term"],
+      pty: { write: vi.fn() } as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt: vi.fn(),
+      writeText,
+      readText: vi.fn().mockResolvedValue(""),
+    });
+    expect(handler(makeEvent({ key: "c", ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(handler(makeEvent({ key: "c", ctrlKey: true, altKey: true }))).toBe(true);
+    expect(handler(makeEvent({ key: "c", ctrlKey: true, metaKey: true }))).toBe(true);
+    expect(writeText).not.toHaveBeenCalled();
   });
 });
