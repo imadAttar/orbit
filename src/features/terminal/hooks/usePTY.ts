@@ -3,6 +3,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useStore } from "../../../core/store";
 import { THEMES } from "../../../lib/themes";
 import { stripAnsi } from "../../../lib/terminalParser";
@@ -275,9 +276,8 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             term,
             pty,
             jumpPrompt: (dir) => jumpRef.current(dir),
-            // Clipboard functions — wired to Tauri clipboard-manager in Task 6.
-            writeText: () => Promise.resolve(),
-            readText: () => Promise.resolve(null),
+            writeText,
+            readText,
           }),
         );
       } catch (err) {
