@@ -1,4 +1,5 @@
 use crate::pty::home_dir;
+use std::path::Path;
 use std::sync::OnceLock;
 
 /// Cached claude binary path — resolved once, reused across all PTY spawns.
@@ -10,24 +11,39 @@ pub(crate) fn resolve_claude_path() -> Option<String> {
     CLAUDE_PATH.get_or_init(resolve_claude_path_inner).clone()
 }
 
-fn resolve_claude_path_inner() -> Option<String> {
-    let home = home_dir();
-
-    #[cfg(not(target_os = "windows"))]
-    let candidates: Vec<String> = vec![
+/// Candidate paths for the `claude` binary on Unix (macOS, Linux).
+fn unix_claude_candidates(home: &str) -> Vec<String> {
+    vec![
         format!("{home}/.local/bin/claude"),
         format!("{home}/.npm-global/bin/claude"),
         "/opt/homebrew/bin/claude".into(),
         "/usr/local/bin/claude".into(),
-    ];
+    ]
+}
+
+/// Candidate paths for the `claude` binary on Windows.
+/// `.exe` is preferred over `.cmd` because stdlib `Command::new` quoting of
+/// argv containing shell metacharacters is fragile for `.cmd` shims
+/// (CVE-2024-24576 / BatBadBut, mitigated in Rust ≥ 1.77.2 but still emits
+/// errors rather than executing safely).
+fn windows_claude_candidates(home: &str) -> Vec<String> {
+    vec![
+        format!("{home}\\.local\\bin\\claude.exe"),
+        format!("{home}\\AppData\\Roaming\\npm\\claude.exe"),
+        format!("{home}\\AppData\\Roaming\\npm\\claude.cmd"),
+        "C:\\Program Files\\nodejs\\claude.exe".into(),
+        "C:\\Program Files\\nodejs\\claude.cmd".into(),
+    ]
+}
+
+fn resolve_claude_path_inner() -> Option<String> {
+    let home = home_dir();
+
+    #[cfg(not(target_os = "windows"))]
+    let candidates = unix_claude_candidates(&home);
 
     #[cfg(target_os = "windows")]
-    let candidates: Vec<String> = vec![
-        format!("{home}\\.local\\bin\\claude.exe"),
-        format!("{home}\\AppData\\Roaming\\npm\\claude.cmd"),
-        format!("{home}\\AppData\\Roaming\\npm\\claude.exe"),
-        "C:\\Program Files\\nodejs\\claude.cmd".into(),
-    ];
+    let candidates = windows_claude_candidates(&home);
 
     for path in &candidates {
         if std::path::Path::new(path).exists() {
@@ -170,16 +186,99 @@ pub async fn generate_title(prompt: String) -> Result<String, String> {
     }
 }
 
+/// Install the session-state hook script to ~/.claude/hooks/ and return the
+/// shell command Claude Code should execute. Script contents are embedded at
+/// compile time; the file is rewritten on every call so upgrades pick up fixes.
+fn install_session_hook_script() -> Result<String, String> {
+    let home = home_dir();
+    if home.is_empty() {
+        return Err("Impossible de resoudre le repertoire home".into());
+    }
+    let hooks_dir = std::path::PathBuf::from(&home).join(".claude").join("hooks");
+    std::fs::create_dir_all(&hooks_dir)
+        .map_err(|e| format!("Impossible de creer ~/.claude/hooks/: {e}"))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let script_path = hooks_dir.join("session-state.ps1");
+        let content = include_str!("../resources/session-state.ps1");
+        std::fs::write(&script_path, content)
+            .map_err(|e| format!("Impossible d'ecrire session-state.ps1: {e}"))?;
+        Ok(build_hook_command_windows(&script_path))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let script_path = hooks_dir.join("session-state.sh");
+        let content = include_str!("../resources/session-state.sh");
+        std::fs::write(&script_path, content)
+            .map_err(|e| format!("Impossible d'ecrire session-state.sh: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script_path)
+                .map_err(|e| format!("stat session-state.sh: {e}"))?
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script_path, perms)
+                .map_err(|e| format!("chmod session-state.sh: {e}"))?;
+        }
+        Ok(build_hook_command_unix(&script_path))
+    }
+}
+
+/// Build the shell command string that Claude Code will execute for the Unix
+/// `.sh` hook script. The command is passed to bash, so a path containing a
+/// space (e.g. `/Users/jean pierre/...`) MUST be quoted to prevent word-splitting.
+fn build_hook_command_unix(script_path: &Path) -> String {
+    let path = script_path.to_string_lossy();
+    // Bash single-quotes prevent all expansion/splitting. Escape any literal
+    // single-quote inside the path with the usual `'\''` sequence.
+    let escaped = path.replace('\'', r"'\''");
+    format!("'{escaped}'")
+}
+
+/// Build the shell command string that Claude Code will execute for the Windows
+/// `.ps1` hook script. Claude Code invokes hooks via bash by default (Git Bash
+/// on Windows), so we wrap a `powershell` invocation. Forward slashes are used
+/// because backslashes in bash double-quoted strings can be interpreted as
+/// escape sequences. The path is enclosed in double quotes, so spaces in the
+/// home directory survive the bash tokenizer.
+/// `-WindowStyle Hidden` prevents a console window from flashing each time a
+/// hook fires (Notification / PreToolUse / Stop).
+fn build_hook_command_windows(script_path: &Path) -> String {
+    let path_str = script_path.to_string_lossy().replace('\\', "/");
+    // Escape any `"` in the path (extremely unusual on Windows but defensively
+    // handled) and any `$` so bash doesn't variable-expand on the way through.
+    let escaped = path_str.replace('"', "\\\"").replace('$', "\\$");
+    format!(
+        "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{escaped}\""
+    )
+}
+
+/// True if the given hook command string refers to Orbit's session-state hook,
+/// regardless of platform variant (.sh or .ps1), path separator, or legacy
+/// `$HOME` expansion. The match is anchored on `.claude/hooks/session-state.`
+/// to reject lookalikes (e.g. an unrelated user script named `session-state.sh`
+/// in a different directory).
+fn is_session_state_command(cmd: &str) -> bool {
+    let normalized = cmd.replace('\\', "/");
+    normalized.contains(".claude/hooks/session-state.sh")
+        || normalized.contains(".claude/hooks/session-state.ps1")
+}
+
 /// Enable session-state hooks in a project's .claude/settings.local.json.
-/// Merges with existing hooks — never duplicates or overwrites.
+/// Installs the platform-appropriate script, then merges the hook entry —
+/// migrating any stale entry (e.g. Unix `.sh` path on Windows) to the new command.
 #[tauri::command]
 pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
     use serde_json::{json, Map, Value};
 
+    let hook_command = install_session_hook_script()?;
+
     let settings_dir = std::path::Path::new(&project_dir).join(".claude");
     let settings_path = settings_dir.join("settings.local.json");
 
-    // Read existing settings or start fresh
     let mut settings: Value = if settings_path.exists() {
         let raw = std::fs::read_to_string(&settings_path)
             .map_err(|e| format!("Impossible de lire settings.local.json: {e}"))?;
@@ -189,9 +288,6 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
         json!({})
     };
 
-    let hook_command = "$HOME/.claude/hooks/session-state.sh";
-
-    // The 3 events we need
     let events = ["Notification", "PreToolUse", "Stop"];
 
     let hooks_obj = settings
@@ -211,22 +307,26 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
             .as_array_mut()
             .ok_or(format!("hooks.{event} n'est pas un tableau"))?;
 
-        // Check if our hook is already present in any matcher
-        let already_present = matchers.iter().any(|m| {
-            m.get("hooks")
-                .and_then(|h| h.as_array())
-                .map(|arr| {
-                    arr.iter().any(|h| {
-                        h.get("command")
-                            .and_then(|c| c.as_str())
-                            .map(|c| c.contains("session-state.sh"))
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false)
-        });
+        let mut found = false;
+        for matcher in matchers.iter_mut() {
+            let Some(hooks) = matcher.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+                continue;
+            };
+            for h in hooks.iter_mut() {
+                let existing = h.get("command").and_then(|c| c.as_str()).unwrap_or("");
+                if is_session_state_command(existing) {
+                    found = true;
+                    if existing != hook_command {
+                        h.as_object_mut()
+                            .ok_or(format!("hooks.{event} entry is not an object"))?
+                            .insert("command".into(), json!(hook_command));
+                        changed = true;
+                    }
+                }
+            }
+        }
 
-        if !already_present {
+        if !found {
             let mut hook_entry = Map::new();
             hook_entry.insert("type".into(), json!("command"));
             hook_entry.insert("command".into(), json!(hook_command));
@@ -281,7 +381,7 @@ pub fn check_session_hooks(project_dir: String) -> bool {
                             hs.iter().any(|h| {
                                 h.get("command")
                                     .and_then(|c| c.as_str())
-                                    .map(|c| c.contains("session-state.sh"))
+                                    .map(is_session_state_command)
                                     .unwrap_or(false)
                             })
                         })
@@ -292,3 +392,190 @@ pub fn check_session_hooks(project_dir: String) -> bool {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // --- is_session_state_command ---
+
+    #[test]
+    fn is_session_state_command_matches_unix_path() {
+        assert!(is_session_state_command(
+            "/Users/u/.claude/hooks/session-state.sh"
+        ));
+        assert!(is_session_state_command(
+            "'/Users/u/.claude/hooks/session-state.sh'"
+        ));
+    }
+
+    #[test]
+    fn is_session_state_command_matches_windows_powershell_invocation() {
+        let cmd = "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"C:/Users/u/.claude/hooks/session-state.ps1\"";
+        assert!(is_session_state_command(cmd));
+    }
+
+    #[test]
+    fn is_session_state_command_matches_windows_backslash_path() {
+        let cmd = "C:\\Users\\u\\.claude\\hooks\\session-state.ps1";
+        assert!(is_session_state_command(cmd));
+    }
+
+    #[test]
+    fn is_session_state_command_matches_legacy_home_variable() {
+        assert!(is_session_state_command(
+            "$HOME/.claude/hooks/session-state.sh"
+        ));
+    }
+
+    #[test]
+    fn is_session_state_command_rejects_unrelated_tool_same_filename() {
+        // Another tool using the same filename in a different location must NOT
+        // be rewritten by Orbit's migration logic.
+        assert!(!is_session_state_command("/opt/mytool/session-state.sh"));
+        assert!(!is_session_state_command("C:/MyScripts/session-state.ps1"));
+        assert!(!is_session_state_command("./session-state.sh foo"));
+    }
+
+    #[test]
+    fn is_session_state_command_rejects_empty_and_unrelated_strings() {
+        assert!(!is_session_state_command(""));
+        assert!(!is_session_state_command("echo hello"));
+        assert!(!is_session_state_command("session-state.sh"));
+    }
+
+    // --- build_hook_command_unix ---
+
+    #[test]
+    fn build_hook_command_unix_simple_path() {
+        let path = PathBuf::from("/Users/u/.claude/hooks/session-state.sh");
+        let cmd = build_hook_command_unix(&path);
+        assert_eq!(cmd, "'/Users/u/.claude/hooks/session-state.sh'");
+    }
+
+    #[test]
+    fn build_hook_command_unix_quotes_path_with_space() {
+        // A home directory containing a space (e.g. macOS "Jean Pierre") MUST
+        // survive bash word-splitting, so the path is single-quoted.
+        let path = PathBuf::from("/Users/jean pierre/.claude/hooks/session-state.sh");
+        let cmd = build_hook_command_unix(&path);
+        assert_eq!(
+            cmd,
+            "'/Users/jean pierre/.claude/hooks/session-state.sh'"
+        );
+    }
+
+    #[test]
+    fn build_hook_command_unix_escapes_single_quote_in_path() {
+        let path = PathBuf::from("/Users/o'brien/.claude/hooks/session-state.sh");
+        let cmd = build_hook_command_unix(&path);
+        // Standard bash-safe escape: 'O'\''Brien' closes, escapes, re-opens.
+        assert_eq!(
+            cmd,
+            r"'/Users/o'\''brien/.claude/hooks/session-state.sh'"
+        );
+    }
+
+    #[test]
+    fn build_hook_command_unix_is_recognized_by_matcher() {
+        // Round-trip: a command we produce must be matched by the detector.
+        let path = PathBuf::from("/Users/jean pierre/.claude/hooks/session-state.sh");
+        let cmd = build_hook_command_unix(&path);
+        assert!(is_session_state_command(&cmd));
+    }
+
+    // --- build_hook_command_windows ---
+
+    #[test]
+    fn build_hook_command_windows_contains_powershell_and_script() {
+        let path = PathBuf::from(r"C:\Users\u\.claude\hooks\session-state.ps1");
+        let cmd = build_hook_command_windows(&path);
+        assert!(cmd.contains("powershell"));
+        assert!(cmd.contains("-NoProfile"));
+        assert!(cmd.contains("-ExecutionPolicy Bypass"));
+        assert!(cmd.contains("-WindowStyle Hidden"));
+        assert!(cmd.contains("session-state.ps1"));
+    }
+
+    #[test]
+    fn build_hook_command_windows_uses_forward_slashes() {
+        // Forward slashes survive bash double-quoted strings; backslashes don't.
+        let path = PathBuf::from(r"C:\Users\u\.claude\hooks\session-state.ps1");
+        let cmd = build_hook_command_windows(&path);
+        assert!(cmd.contains("C:/Users/u/.claude/hooks/session-state.ps1"));
+        assert!(!cmd.contains(r"C:\Users\u"));
+    }
+
+    #[test]
+    fn build_hook_command_windows_is_recognized_by_matcher() {
+        let path = PathBuf::from(r"C:\Users\u\.claude\hooks\session-state.ps1");
+        let cmd = build_hook_command_windows(&path);
+        assert!(is_session_state_command(&cmd));
+    }
+
+    #[test]
+    fn build_hook_command_windows_preserves_space_in_path() {
+        // The path lives inside double quotes, so bash tokenization keeps it
+        // as a single argument even with spaces (common Windows username
+        // scenarios like "John Smith"). The forward-slash form must still appear.
+        let path = PathBuf::from(r"C:\Users\John Smith\.claude\hooks\session-state.ps1");
+        let cmd = build_hook_command_windows(&path);
+        assert!(cmd.contains("\"C:/Users/John Smith/.claude/hooks/session-state.ps1\""));
+    }
+
+    #[test]
+    fn build_hook_command_windows_escapes_dollar_and_quote() {
+        // Defensive: the path goes into a bash double-quoted string where `$`
+        // triggers variable expansion and `"` closes the string.
+        let path = PathBuf::from(r#"C:\Users\weird$name\.claude\hooks\session-state.ps1"#);
+        let cmd = build_hook_command_windows(&path);
+        assert!(cmd.contains(r"\$name"), "got: {cmd}");
+    }
+
+    // --- claude binary candidates ---
+
+    #[test]
+    fn windows_claude_candidates_prefer_exe_over_cmd_in_npm_dir() {
+        let candidates = windows_claude_candidates("C:\\Users\\u");
+        let npm = "AppData\\Roaming\\npm";
+        let exe_pos = candidates
+            .iter()
+            .position(|c| c.contains(npm) && c.ends_with(".exe"));
+        let cmd_pos = candidates
+            .iter()
+            .position(|c| c.contains(npm) && c.ends_with(".cmd"));
+        assert!(
+            exe_pos.is_some() && cmd_pos.is_some(),
+            "both .exe and .cmd npm candidates must exist"
+        );
+        assert!(
+            exe_pos.unwrap() < cmd_pos.unwrap(),
+            "prefer .exe over .cmd to avoid BatBadBut (CVE-2024-24576) quoting issues"
+        );
+    }
+
+    #[test]
+    fn windows_claude_candidates_prefer_exe_over_cmd_in_program_files() {
+        let candidates = windows_claude_candidates("C:\\Users\\u");
+        let pf = "Program Files\\nodejs";
+        let exe_pos = candidates
+            .iter()
+            .position(|c| c.contains(pf) && c.ends_with(".exe"));
+        let cmd_pos = candidates
+            .iter()
+            .position(|c| c.contains(pf) && c.ends_with(".cmd"));
+        assert!(
+            exe_pos.is_some() && cmd_pos.is_some(),
+            "both .exe and .cmd Program Files candidates must exist"
+        );
+        assert!(exe_pos.unwrap() < cmd_pos.unwrap());
+    }
+
+    #[test]
+    fn unix_claude_candidates_include_homebrew_and_local_bin() {
+        let candidates = unix_claude_candidates("/Users/u");
+        assert!(candidates.iter().any(|c| c == "/Users/u/.local/bin/claude"));
+        assert!(candidates.iter().any(|c| c == "/opt/homebrew/bin/claude"));
+        assert!(candidates.iter().any(|c| c == "/usr/local/bin/claude"));
+    }
+}
