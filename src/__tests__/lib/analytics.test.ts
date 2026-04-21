@@ -10,6 +10,11 @@ import { trackEvent, setAnalyticsEnabled, initAnalytics } from "../../lib/analyt
 describe("analytics", () => {
   beforeEach(() => {
     mockFetch.mockClear();
+    localStorage.clear();
+    // Pretend we've already tracked today's activity so trackRetention is a
+    // no-op, letting assertions count events fired by initAnalytics itself.
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem("orbit_last_active_day", today);
     setAnalyticsEnabled(true);
   });
 

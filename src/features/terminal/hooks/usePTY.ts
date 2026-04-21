@@ -18,7 +18,7 @@ interface UsePTYOptions {
   projectDir: string;
   containerRef: React.RefObject<HTMLDivElement | null>;
   activated: boolean;
-  restoreChoice: "pending" | "ask" | "resume" | "fresh";
+  restoreChoice: "pending" | "ask" | "resume" | "fresh" | "continue";
   modeChoice: "normal" | "yolo" | null;
   generation: number;
   isVisible: boolean;
@@ -69,7 +69,10 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
     if (restoreChoice === "pending" || restoreChoice === "ask") return;
     if (modeChoice === null) return;
 
-    const shouldRestore = restoreChoice === "resume";
+    // "resume" restores scrollback AND uses --resume.
+    // "continue" (mode toggle) only uses --resume — clean terminal, kept context.
+    const shouldRestoreScrollback = restoreChoice === "resume";
+    const shouldResumeSession = restoreChoice === "resume" || restoreChoice === "continue";
     const storeState = useStore.getState();
     const currentTheme = THEMES[storeState.settings.theme] ?? THEMES["orbit"];
 
@@ -146,7 +149,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         // Rust spawn_pty auto-kills any existing PTY for this session_id (mode toggle, reset)
 
         // Restore scrollback if user chose "resume"
-        if (shouldRestore) {
+        if (shouldRestoreScrollback) {
           try {
             const saved = await scrollback.load(sid);
             if (saved) term.write(saved);
@@ -207,7 +210,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             shellOnly: true,
           });
         } else {
-          const isResume = shouldRestore && !!claudeSessionId;
+          const isResume = shouldResumeSession && !!claudeSessionId;
           const effectiveClaudeId = isResume
             ? claudeSessionId!
             : crypto.randomUUID();
@@ -233,7 +236,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         spawnComplete = true;
         spawnedRef.current = true;
         onSpawned(true);
-        trackEvent("pty_spawned", { restore: shouldRestore ? 1 : 0 });
+        trackEvent("pty_spawned", { restore: shouldResumeSession ? 1 : 0 });
 
         // Forward xterm input to PTY
         let lastPromptTrack = 0;
@@ -248,6 +251,11 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
               lastPromptTrack = now;
               promptCount++;
               trackEvent("prompt_sent");
+            }
+            // Mark conversation as started on meaningful input — gates --resume in later spawns
+            // (e.g. mode toggle) so we don't hit "No conversation found" on fresh sessions.
+            if (!isTerminalSession && inputBuffer.trim().length > 0) {
+              useStore.getState().markConversationStarted(sid);
             }
             // Auto-title: generate on first meaningful prompt
             if (!titleGenerated && !isTerminalSession && inputBuffer.trim().length > 3) {

@@ -58,6 +58,25 @@ pub fn spawn_pty(
         return Err(format!("Repertoire projet introuvable : {project_dir}"));
     }
 
+    // Kill any existing PTY for this session_id so we don't leak a phantom
+    // child that keeps emitting output into the new terminal (e.g. mode toggle).
+    {
+        let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(mut existing) = sessions.remove(&session_id) {
+            tracing::info!(session_id = %session_id, "Killing previous PTY before respawn");
+            existing.killed.store(true, Ordering::Relaxed);
+            if let Err(e) = existing.child.kill() {
+                tracing::warn!(session_id = %session_id, "Failed to kill previous PTY child: {e}");
+            }
+            let sid = session_id.clone();
+            thread::spawn(move || {
+                if let Err(e) = existing.child.wait() {
+                    tracing::warn!(session_id = %sid, "Failed to wait on previous PTY child: {e}");
+                }
+            });
+        }
+    }
+
     let pty_system = native_pty_system();
 
     let pair = pty_system

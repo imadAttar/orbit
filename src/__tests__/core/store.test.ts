@@ -21,7 +21,8 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   BaseDirectory: { Home: 1 },
 }));
 
-import { useStore } from "../../core/store";
+import { useStore, sessionHasConversation } from "../../core/store";
+import type { Session } from "../../core/types";
 
 function getState() {
   return useStore.getState();
@@ -48,6 +49,59 @@ describe("store", () => {
       },
       loaded: false,
       sessionCosts: {},
+    });
+  });
+
+  describe("sessionHasConversation", () => {
+    const base: Session = { id: "x", name: "n", type: "claude" };
+
+    it("returns false for undefined session (unknown sid)", () => {
+      expect(sessionHasConversation(undefined)).toBe(false);
+    });
+
+    it("returns false when hasConversation is missing (legacy pre-migration session)", () => {
+      // Pre-migration sessions persisted without the flag must NOT trigger
+      // --resume, otherwise Claude CLI fails with "No conversation found" on
+      // fresh sessions that the user never typed into.
+      expect(sessionHasConversation(base)).toBe(false);
+    });
+
+    it("returns false when hasConversation is explicitly false", () => {
+      expect(sessionHasConversation({ ...base, hasConversation: false })).toBe(false);
+    });
+
+    it("returns true only when hasConversation is explicitly true", () => {
+      expect(sessionHasConversation({ ...base, hasConversation: true })).toBe(true);
+    });
+  });
+
+  describe("markConversationStarted", () => {
+    it("flips hasConversation from false to true", () => {
+      getState().addProject("p", "/p");
+      const sid = getState().projects[0].sessions[0].id;
+      expect(getState().projects[0].sessions[0].hasConversation).toBe(false);
+      getState().markConversationStarted(sid);
+      expect(getState().projects[0].sessions[0].hasConversation).toBe(true);
+    });
+
+    it("is idempotent (no-op when already true)", () => {
+      getState().addProject("p", "/p");
+      const sid = getState().projects[0].sessions[0].id;
+      getState().markConversationStarted(sid);
+      const after1 = getState().projects[0].sessions[0];
+      getState().markConversationStarted(sid);
+      const after2 = getState().projects[0].sessions[0];
+      // Reference equality proves no re-render path was taken.
+      expect(after1).toBe(after2);
+    });
+
+    it("does not flip hasConversation on other sessions when sid is unknown", () => {
+      getState().addProject("p", "/p");
+      const realSid = getState().projects[0].sessions[0].id;
+      getState().markConversationStarted("non-existent-sid");
+      const session = getState().projects[0].sessions[0];
+      expect(session.id).toBe(realSid);
+      expect(session.hasConversation).toBe(false);
     });
   });
 
