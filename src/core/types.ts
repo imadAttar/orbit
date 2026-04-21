@@ -6,6 +6,7 @@ export type Session = {
   type?: SessionType; // "claude" (default) or "terminal" (plain shell, no Claude)
   claudeSessionId?: string; // Claude Code CLI session UUID for --resume
   dangerousMode?: boolean; // true = yolo mode (skip all permission prompts)
+  hasConversation?: boolean; // true once the user has sent at least one prompt; gates --resume
 };
 
 export type Project = {
