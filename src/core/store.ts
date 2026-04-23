@@ -80,7 +80,24 @@ function uid(): string {
 }
 
 function makeSession(name: string, type?: import("./types").SessionType): Session {
-  return { id: uid(), name, type: type ?? "claude" };
+  return { id: uid(), name, type: type ?? "claude", hasConversation: false };
+}
+
+/**
+ * True when the session is known to have an active Claude conversation
+ * (user sent at least one prompt after the last spawn).
+ *
+ * Strict: `undefined` (legacy sessions persisted before the `hasConversation`
+ * flag was added) resolves to `false`. This avoids spawning `claude --resume`
+ * on sessions whose Claude-side state may not exist, which would surface as
+ * "No conversation found with session ID" in the terminal.
+ *
+ * Trade-off: a legacy session that truly had a conversation loses `--resume`
+ * continuity on the first mode toggle. After the next prompt the flag is set
+ * and subsequent toggles resume correctly.
+ */
+export function sessionHasConversation(session: Session | undefined): boolean {
+  return session?.hasConversation === true;
 }
 
 function makeProject(name: string, dir: string): Project {
@@ -118,6 +135,7 @@ interface AppStore {
   updateSessionCost: (sid: string, cost: number) => void;
   setClaudeSessionId: (sid: string, claudeId: string) => void;
   setDangerousMode: (sid: string, on: boolean) => void;
+  markConversationStarted: (sid: string) => void;
 
   setSidebarWidth: (w: number) => void;
   setFontSize: (s: number) => void;
@@ -364,6 +382,23 @@ export const useStore = create<AppStore>((set, get) => ({
         ...p,
         sessions: p.sessions.map((ss) =>
           ss.id === sid ? { ...ss, dangerousMode: on } : ss
+        ),
+      }));
+      persist({ ...s, projects });
+      return { projects };
+    }),
+
+  markConversationStarted: (sid) =>
+    set((s) => {
+      // No-op if already marked — avoids re-persisting on every prompt
+      const already = s.projects.some((p) =>
+        p.sessions.some((ss) => ss.id === sid && ss.hasConversation === true)
+      );
+      if (already) return {};
+      const projects = s.projects.map((p) => ({
+        ...p,
+        sessions: p.sessions.map((ss) =>
+          ss.id === sid ? { ...ss, hasConversation: true } : ss
         ),
       }));
       persist({ ...s, projects });

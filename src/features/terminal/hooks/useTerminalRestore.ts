@@ -7,7 +7,7 @@ interface RestoreConfig {
   sessionId: string;
   activated: boolean;
   generation: number;
-  restoreChoice: "pending" | "ask" | "resume" | "fresh";
+  restoreChoice: "pending" | "ask" | "resume" | "fresh" | "continue";
   modeChoice: "normal" | "yolo" | null;
   termRef: React.RefObject<XTerm | null>;
   spawnedRef: React.RefObject<boolean>;

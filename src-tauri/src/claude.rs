@@ -10,26 +10,40 @@ pub(crate) fn resolve_claude_path() -> Option<String> {
     CLAUDE_PATH.get_or_init(resolve_claude_path_inner).clone()
 }
 
-fn resolve_claude_path_inner() -> Option<String> {
-    let home = home_dir();
-
-    #[cfg(not(target_os = "windows"))]
-    let candidates: Vec<String> = vec![
+/// Candidate paths for the `claude` binary on Unix (macOS, Linux).
+fn unix_claude_candidates(home: &str) -> Vec<String> {
+    vec![
         format!("{home}/.local/bin/claude"),
         format!("{home}/.npm-global/bin/claude"),
         "/opt/homebrew/bin/claude".into(),
         "/usr/local/bin/claude".into(),
-    ];
+    ]
+}
 
-    // .exe preferred over .cmd — CVE-2024-24576 (BatBadBut): .cmd shims unsafe with shell metacharacters
-    #[cfg(target_os = "windows")]
-    let candidates: Vec<String> = vec![
+/// Candidate paths for the `claude` binary on Windows.
+/// `.exe` is preferred over `.cmd` because stdlib `Command::new` quoting of
+/// argv containing shell metacharacters is fragile for `.cmd` shims
+/// (CVE-2024-24576 / BatBadBut, mitigated in Rust ≥ 1.77.2 but still emits
+/// errors rather than executing safely).
+#[cfg(any(target_os = "windows", test))]
+fn windows_claude_candidates(home: &str) -> Vec<String> {
+    vec![
         format!("{home}\\.local\\bin\\claude.exe"),
         format!("{home}\\AppData\\Roaming\\npm\\claude.exe"),
         format!("{home}\\AppData\\Roaming\\npm\\claude.cmd"),
         "C:\\Program Files\\nodejs\\claude.exe".into(),
         "C:\\Program Files\\nodejs\\claude.cmd".into(),
-    ];
+    ]
+}
+
+fn resolve_claude_path_inner() -> Option<String> {
+    let home = home_dir();
+
+    #[cfg(not(target_os = "windows"))]
+    let candidates = unix_claude_candidates(&home);
+
+    #[cfg(target_os = "windows")]
+    let candidates = windows_claude_candidates(&home);
 
     for path in &candidates {
         if std::path::Path::new(path).exists() {
@@ -237,15 +251,18 @@ pub async fn generate_session_title(transcript_path: String) -> Result<String, S
 }
 
 /// Enable session-state hooks in a project's .claude/settings.local.json.
-/// Merges with existing hooks — never duplicates or overwrites.
+/// Installs the platform-appropriate script, then merges the hook entry —
+/// migrating any stale entry (e.g. Unix `.sh` path on Windows) to the new command.
 #[tauri::command]
 pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
     use serde_json::{json, Map, Value};
 
+    // orbit-session-state: inline hook — writes per-project state to ~/.orbit/session-{cwd_hash}.json
+    let hook_command = "python3 -c \"_m='orbit-session-state'; import sys,json,hashlib,os,pathlib,time; d=json.load(sys.stdin); e=d.get('hook_event_name',''); s={'Stop':'idle','Notification':'waiting'}.get(e,'working'); o={'session_id':d.get('session_id',''),'state':s,'ts':int(time.time()*1000),'tool':d.get('tool_name'),'transcript_path':d.get('transcript_path') if e=='Stop' else None}; h=hashlib.md5(os.getcwd().encode()).hexdigest()[:8]; p=pathlib.Path.home()/'.orbit'; p.mkdir(exist_ok=True); (p/f'session-{h}.json').write_text(json.dumps(o))\"";
+
     let settings_dir = std::path::Path::new(&project_dir).join(".claude");
     let settings_path = settings_dir.join("settings.local.json");
 
-    // Read existing settings or start fresh
     let mut settings: Value = if settings_path.exists() {
         let raw = std::fs::read_to_string(&settings_path)
             .map_err(|e| format!("Impossible de lire settings.local.json: {e}"))?;
@@ -255,11 +272,6 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
         json!({})
     };
 
-    // orbit-session-state: inline hook — writes per-project state to ~/.orbit/session-{cwd_hash}.json
-    let hook_command = "python3 -c \"_m='orbit-session-state'; import sys,json,hashlib,os,pathlib,time; d=json.load(sys.stdin); e=d.get('hook_event_name',''); s={'Stop':'idle','Notification':'waiting'}.get(e,'working'); o={'session_id':d.get('session_id',''),'state':s,'ts':int(time.time()*1000),'tool':d.get('tool_name'),'transcript_path':d.get('transcript_path') if e=='Stop' else None}; h=hashlib.md5(os.getcwd().encode()).hexdigest()[:8]; p=pathlib.Path.home()/'.orbit'; p.mkdir(exist_ok=True); (p/f'session-{h}.json').write_text(json.dumps(o))\"";
-
-
-    // The 3 events we need
     let events = ["Notification", "PreToolUse", "Stop"];
 
     let hooks_obj = settings
@@ -279,22 +291,26 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
             .as_array_mut()
             .ok_or(format!("hooks.{event} n'est pas un tableau"))?;
 
-        // Check if our hook is already present in any matcher
-        let already_present = matchers.iter().any(|m| {
-            m.get("hooks")
-                .and_then(|h| h.as_array())
-                .map(|arr| {
-                    arr.iter().any(|h| {
-                        h.get("command")
-                            .and_then(|c| c.as_str())
-                            .map(|c| c.contains("orbit-session-state"))
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false)
-        });
+        let mut found = false;
+        for matcher in matchers.iter_mut() {
+            let Some(hooks) = matcher.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+                continue;
+            };
+            for h in hooks.iter_mut() {
+                let existing = h.get("command").and_then(|c| c.as_str()).unwrap_or("");
+                if existing.contains("orbit-session-state") {
+                    found = true;
+                    if existing != hook_command {
+                        h.as_object_mut()
+                            .ok_or(format!("hooks.{event} entry is not an object"))?
+                            .insert("command".into(), json!(hook_command));
+                        changed = true;
+                    }
+                }
+            }
+        }
 
-        if !already_present {
+        if !found {
             let mut hook_entry = Map::new();
             hook_entry.insert("type".into(), json!("command"));
             hook_entry.insert("command".into(), json!(hook_command));
@@ -360,3 +376,52 @@ pub fn check_session_hooks(project_dir: String) -> bool {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_claude_candidates_prefer_exe_over_cmd_in_npm_dir() {
+        let candidates = windows_claude_candidates("C:\\Users\\u");
+        let npm = "AppData\\Roaming\\npm";
+        let exe_pos = candidates
+            .iter()
+            .position(|c| c.contains(npm) && c.ends_with(".exe"));
+        let cmd_pos = candidates
+            .iter()
+            .position(|c| c.contains(npm) && c.ends_with(".cmd"));
+        assert!(
+            exe_pos.is_some() && cmd_pos.is_some(),
+            "both .exe and .cmd npm candidates must exist"
+        );
+        assert!(
+            exe_pos.unwrap() < cmd_pos.unwrap(),
+            "prefer .exe over .cmd to avoid BatBadBut (CVE-2024-24576) quoting issues"
+        );
+    }
+
+    #[test]
+    fn windows_claude_candidates_prefer_exe_over_cmd_in_program_files() {
+        let candidates = windows_claude_candidates("C:\\Users\\u");
+        let pf = "Program Files\\nodejs";
+        let exe_pos = candidates
+            .iter()
+            .position(|c| c.contains(pf) && c.ends_with(".exe"));
+        let cmd_pos = candidates
+            .iter()
+            .position(|c| c.contains(pf) && c.ends_with(".cmd"));
+        assert!(
+            exe_pos.is_some() && cmd_pos.is_some(),
+            "both .exe and .cmd Program Files candidates must exist"
+        );
+        assert!(exe_pos.unwrap() < cmd_pos.unwrap());
+    }
+
+    #[test]
+    fn unix_claude_candidates_include_homebrew_and_local_bin() {
+        let candidates = unix_claude_candidates("/Users/u");
+        assert!(candidates.iter().any(|c| c == "/Users/u/.local/bin/claude"));
+        assert!(candidates.iter().any(|c| c == "/opt/homebrew/bin/claude"));
+        assert!(candidates.iter().any(|c| c == "/usr/local/bin/claude"));
+    }
+}
