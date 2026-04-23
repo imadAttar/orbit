@@ -23,6 +23,10 @@
     "createUpdaterArtifacts": true,
     "macOS": {
       "signingIdentity": "-"
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com"
     }
   },
   "plugins": {

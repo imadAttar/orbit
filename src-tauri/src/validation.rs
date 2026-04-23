@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn validate_filename_allows_normal() {
         assert!(validate_filename("data.json").is_ok());
-        assert!(validate_filename("session-state.json").is_ok());
+        assert!(validate_filename("session-a3f2b1c8.json").is_ok());
     }
 
     #[test]

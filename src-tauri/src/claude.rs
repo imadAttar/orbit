@@ -21,11 +21,13 @@ fn resolve_claude_path_inner() -> Option<String> {
         "/usr/local/bin/claude".into(),
     ];
 
+    // .exe preferred over .cmd — CVE-2024-24576 (BatBadBut): .cmd shims unsafe with shell metacharacters
     #[cfg(target_os = "windows")]
     let candidates: Vec<String> = vec![
         format!("{home}\\.local\\bin\\claude.exe"),
-        format!("{home}\\AppData\\Roaming\\npm\\claude.cmd"),
         format!("{home}\\AppData\\Roaming\\npm\\claude.exe"),
+        format!("{home}\\AppData\\Roaming\\npm\\claude.cmd"),
+        "C:\\Program Files\\nodejs\\claude.exe".into(),
         "C:\\Program Files\\nodejs\\claude.cmd".into(),
     ];
 
@@ -170,6 +172,70 @@ pub async fn generate_title(prompt: String) -> Result<String, String> {
     }
 }
 
+/// Extract the last user message from a Claude Code JSONL transcript.
+fn read_last_user_message(path: &str) -> Result<String, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("Impossible de lire le transcript: {e}"))?;
+
+    for line in content.lines().rev() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(msg) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+
+        let role = msg
+            .get("role")
+            .and_then(|r| r.as_str())
+            .or_else(|| {
+                msg.get("message")
+                    .and_then(|m| m.get("role"))
+                    .and_then(|r| r.as_str())
+            })
+            .unwrap_or("");
+
+        if role != "user" {
+            continue;
+        }
+
+        let content_val = msg
+            .get("content")
+            .or_else(|| msg.get("message").and_then(|m| m.get("content")));
+
+        if let Some(val) = content_val {
+            if let Some(s) = val.as_str() {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    return Ok(trimmed.chars().take(500).collect());
+                }
+            }
+            if let Some(arr) = val.as_array() {
+                for block in arr {
+                    if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                            let trimmed = text.trim();
+                            if !trimmed.is_empty() {
+                                return Ok(trimmed.chars().take(500).collect());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Err("Aucun message utilisateur trouvé".into())
+}
+
+/// Read last user message from transcript then generate a session title with Haiku.
+#[tauri::command]
+pub async fn generate_session_title(transcript_path: String) -> Result<String, String> {
+    let prompt = read_last_user_message(&transcript_path)?;
+    generate_title(prompt).await
+}
+
 /// Enable session-state hooks in a project's .claude/settings.local.json.
 /// Merges with existing hooks — never duplicates or overwrites.
 #[tauri::command]
@@ -189,7 +255,9 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
         json!({})
     };
 
-    let hook_command = "$HOME/.claude/hooks/session-state.sh";
+    // orbit-session-state: inline hook — writes per-project state to ~/.orbit/session-{cwd_hash}.json
+    let hook_command = "python3 -c \"_m='orbit-session-state'; import sys,json,hashlib,os,pathlib,time; d=json.load(sys.stdin); e=d.get('hook_event_name',''); s={'Stop':'idle','Notification':'waiting'}.get(e,'working'); o={'session_id':d.get('session_id',''),'state':s,'ts':int(time.time()*1000),'tool':d.get('tool_name'),'transcript_path':d.get('transcript_path') if e=='Stop' else None}; h=hashlib.md5(os.getcwd().encode()).hexdigest()[:8]; p=pathlib.Path.home()/'.orbit'; p.mkdir(exist_ok=True); (p/f'session-{h}.json').write_text(json.dumps(o))\"";
+
 
     // The 3 events we need
     let events = ["Notification", "PreToolUse", "Stop"];
@@ -219,7 +287,7 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
                     arr.iter().any(|h| {
                         h.get("command")
                             .and_then(|c| c.as_str())
-                            .map(|c| c.contains("session-state.sh"))
+                            .map(|c| c.contains("orbit-session-state"))
                             .unwrap_or(false)
                     })
                 })
@@ -281,7 +349,7 @@ pub fn check_session_hooks(project_dir: String) -> bool {
                             hs.iter().any(|h| {
                                 h.get("command")
                                     .and_then(|c| c.as_str())
-                                    .map(|c| c.contains("session-state.sh"))
+                                    .map(|c| c.contains("orbit-session-state"))
                                     .unwrap_or(false)
                             })
                         })

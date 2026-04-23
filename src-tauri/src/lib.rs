@@ -109,6 +109,7 @@ pub fn run() {
             claude::check_claude_installed,
             claude::install_claude,
             claude::generate_title,
+            claude::generate_session_title,
             claude::enable_session_hooks,
             claude::check_session_hooks,
             statusline::has_statusline,

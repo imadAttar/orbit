@@ -15,6 +15,7 @@ interface SessionStateData {
   state: string;
   ts: number;
   tool?: string;
+  transcript_path?: string;
 }
 
 const _prevSessionStates: Record<string, string> = {};
@@ -50,6 +51,13 @@ async function setupSessionStateListener() {
             window.dispatchEvent(new CustomEvent("session-completed", {
               detail: { sessionId: matchedSid, projectId: matchedProject.id },
             }));
+          }
+          if (data.transcript_path && /^session-\d+$/.test(matchedSession.name)) {
+            import("./api").then(({ claude }) =>
+              claude.generateSessionTitle(data.transcript_path!)
+                .then((title) => { if (title) useStore.getState().renameSession(matchedSid!, title); })
+                .catch(() => {})
+            );
           }
         }
       } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("store", `session-state parse error: ${err}`)); }
