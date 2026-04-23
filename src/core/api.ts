@@ -72,6 +72,9 @@ export const claude = {
   generateTitle: (prompt: string) =>
     call<string>("generate_title", { prompt }),
 
+  generateSessionTitle: (transcriptPath: string) =>
+    call<string>("generate_session_title", { transcriptPath }),
+
   enableSessionHooks: (projectDir: string) =>
     call<boolean>("enable_session_hooks", { projectDir }),
 

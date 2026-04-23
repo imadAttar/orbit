@@ -98,6 +98,32 @@ jobs:
         with:
           args: --target ${{ matrix.target }}
 
+      - name: Upload unsigned MSI for signing
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-msi
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+
+      - name: Sign MSI with SignPath
+        if: runner.os == 'Windows'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug: orbit
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: initial-version
+          github-artifact-name: unsigned-msi
+          wait-for-completion: true
+          output-artifact-directory: signed-msi/
+
+      - name: Replace MSI with signed version
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cp signed-msi/*.msi "src-tauri/target/${{ matrix.target }}/release/bundle/msi/"
+
       - name: Collect artifacts
         shell: bash
         run: |

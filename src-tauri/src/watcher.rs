@@ -46,7 +46,7 @@ pub fn setup_watcher(app: tauri::AppHandle) -> Result<(), String> {
                 let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                 match filename {
-                    "session-state.json" => {
+                    f if f.starts_with("session-") && f.ends_with(".json") => {
                         if let Ok(raw) = fs::read_to_string(path) {
                             let _ = app_handle.emit("session-state-changed", raw);
                         }
