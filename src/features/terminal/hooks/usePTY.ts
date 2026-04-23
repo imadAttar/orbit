@@ -3,12 +3,14 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useStore } from "../../../core/store";
 import { THEMES } from "../../../lib/themes";
 import { stripAnsi } from "../../../lib/terminalParser";
 import { trackEvent } from "../../../lib/analytics";
 import { pty, terminal, scrollback, listen, claude } from "../../../core/api";
 import { useScrollback } from "./useScrollback";
+import { createTerminalKeyEventHandler } from "./terminalKeyHandler";
 
 // File path regex for xterm link provider
 const FILE_PATH_RE = /((?:\/|\.\/|\.\.\/|[a-zA-Z]:\\)[\w.\/_\\-]+(?:\.[a-zA-Z0-9]+))(?::(\d+))?(?::(\d+))?/;
@@ -276,16 +278,16 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
           }
         });
 
-        // Prompt navigation — intercept Cmd+Up/Down before xterm
-        term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-          if ((e.metaKey || e.ctrlKey) && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-            e.preventDefault();
-            e.stopPropagation();
-            jumpRef.current(e.key === "ArrowUp" ? "prev" : "next");
-            return false;
-          }
-          return true;
-        });
+        term.attachCustomKeyEventHandler(
+          createTerminalKeyEventHandler({
+            sid,
+            term,
+            pty,
+            jumpPrompt: (dir) => jumpRef.current(dir),
+            writeText,
+            readText,
+          }),
+        );
       } catch (err) {
         // Ensure listener is cleaned up even if spawn failed
         if (unlistenRef.current) {
