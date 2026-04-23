@@ -1,5 +1,5 @@
 import { useEffect, useRef, useReducer, memo } from "react";
-import { useStore } from "../../core/store";
+import { useStore, sessionHasConversation } from "../../core/store";
 import { trackEvent } from "../../lib/analytics";
 import { useT } from "../../i18n/i18n";
 import { usePTY } from "./hooks/usePTY";
@@ -10,7 +10,9 @@ import "@xterm/xterm/css/xterm.css";
 
 interface TermState {
   activated: boolean;
-  restoreChoice: "pending" | "ask" | "resume" | "fresh";
+  // "continue" = resume the claude session (--resume) without restoring scrollback,
+  // used by mode toggle so the user sees a clean terminal but keeps conversation context.
+  restoreChoice: "pending" | "ask" | "resume" | "fresh" | "continue";
   modeChoice: "normal" | "yolo" | null;
   generation: number;
   spawned: boolean;
@@ -242,15 +244,30 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
           onClick={() => {
             const next = ts.modeChoice === "yolo" ? "normal" : "yolo";
             dp({ type: "setMode", value: next as "normal" | "yolo" });
-            dp({ type: "setRestore", value: "fresh" });
+            // "continue" = --resume the claude session without restoring scrollback.
+            // --resume fails with "No conversation found" if the Claude-side
+            // session doesn't exist yet — so only take that path when we know
+            // a prompt has been sent (hasConversation === true). For unknown/
+            // legacy sessions we start fresh to avoid surfacing that error.
+            let targetSession: import("../../core/types").Session | undefined;
+            for (const p of useStore.getState().projects) {
+              const s = p.sessions.find((ss) => ss.id === sessionId);
+              if (s) { targetSession = s; break; }
+            }
+            if (sessionHasConversation(targetSession)) {
+              dp({ type: "setRestore", value: "continue" });
+            } else {
+              // Clear the stored claude id so usePTY generates a fresh one.
+              useStore.getState().setClaudeSessionId(sessionId, "");
+              dp({ type: "setRestore", value: "fresh" });
+            }
             useStore.getState().setDangerousMode(sessionId, next === "yolo");
             if (ptyResult.termRef.current) {
               ptyResult.termRef.current.clear();
               ptyResult.termRef.current.reset();
             }
-            // PTY kill handled by Rust spawn_pty (auto-kills previous for same session_id)
+            // Previous PTY is killed by Rust spawn_pty on respawn.
             ptyResult.spawnedRef.current = false;
-            dp({ type: "reset" });
             trackEvent("mode_toggle", { mode: next });
           }}
         >
