@@ -1,0 +1,58 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/imad/Documents/workspace/orbit/.codex/hooks/block-build.sh'"
+          },
+          {
+            "type": "command",
+            "command": "'/Users/imad/Documents/workspace/orbit/.codex/hooks/block-force-push.sh'"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/imad/Documents/workspace/orbit/.codex/hooks/protect-critical-files.sh'"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/imad/Documents/workspace/orbit/.codex/hooks/session-state.sh'",
+            "timeout": 3000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/imad/Documents/workspace/orbit/.codex/hooks/skill-recommender.sh'",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/imad/Documents/workspace/orbit/.codex/hooks/session-state.sh'",
+            "timeout": 3000
+          }
+        ]
+      }
+    ]
+  }
+}
