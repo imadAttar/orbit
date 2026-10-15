@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, cleanup } from "@testing-library/react";
+import { StrictMode } from "react";
 
 // Mock dependencies before imports
 const mockInit = vi.fn().mockResolvedValue(undefined);
@@ -82,6 +83,40 @@ describe("useAppInit", () => {
 
   afterEach(() => cleanup());
 
+  it("deduplicates initialization under StrictMode", async () => {
+    renderHook(() => useAppInit(dispatch), { wrapper: StrictMode });
+    await vi.waitFor(() => expect(mockInitUpdater).toHaveBeenCalled());
+    expect(mockInit).toHaveBeenCalledOnce();
+    expect(mockTrackEvent.mock.calls.filter(([name]) => name === "app_launched")).toHaveLength(1);
+  });
+
+  it("measures rapid focus intervals without throttle corruption", () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    renderHook(() => useAppInit(dispatch));
+    window.dispatchEvent(new Event("focus"));
+    now = 100;
+    window.dispatchEvent(new Event("blur"));
+    now = 150;
+    window.dispatchEvent(new Event("focus"));
+    now = 200;
+    window.dispatchEvent(new Event("focus"));
+    now = 250;
+    window.dispatchEvent(new Event("blur"));
+    expect(mockTrackEvent.mock.calls.filter(([name]) => name === "window_blurred").map(([, props]) => props)).toEqual([{ activeMs: 100 }, { activeMs: 100 }]);
+    vi.restoreAllMocks();
+  });
+
+  it("does not launch after unmount while initialization is pending", async () => {
+    let resolve!: () => void;
+    mockInit.mockReturnValueOnce(new Promise<void>(r => { resolve = r; }));
+    const { unmount } = renderHook(() => useAppInit(dispatch));
+    unmount();
+    resolve();
+    await Promise.resolve();
+    expect(mockInitAnalytics).not.toHaveBeenCalled();
+  });
+
   it("calls store.init() on mount", async () => {
     renderHook(() => useAppInit(dispatch));
     await vi.waitFor(() => expect(mockInit).toHaveBeenCalledOnce());
@@ -93,13 +128,28 @@ describe("useAppInit", () => {
   });
 
   it("tracks app_launched event", async () => {
+    useStore.setState({
+      projects: [{
+        id: "p1",
+        name: "Test",
+        dir: "/tmp",
+        sessions: [
+          { id: "s1", name: "legacy" },
+          { id: "s2", name: "claude", type: "claude" },
+          { id: "s3", name: "terminal", type: "terminal" },
+        ],
+      }],
+    });
     renderHook(() => useAppInit(dispatch));
     await vi.waitFor(() =>
       expect(mockTrackEvent).toHaveBeenCalledWith("app_launched", expect.objectContaining({
         theme: "orbit",
         fontSize: 11,
         projects: 1,
-        sessions: 1,
+        sessions: 3,
+        agentSessions: 2,
+        terminalSessions: 1,
+        defaultMode: "normal",
       })),
     );
   });

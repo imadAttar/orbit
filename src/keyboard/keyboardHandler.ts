@@ -15,14 +15,22 @@ export interface KeyboardCallbacks {
 export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCallbacks) {
   const mod = e.metaKey || e.ctrlKey;
   const state = useStore.getState();
+  const key = e.key.toLowerCase();
+  const project = state.projects.find((p) => p.id === state.activePid);
+  const visible = project?.sessions.filter((s) => s.archivedAt === undefined) ?? [];
+  const sessions = [...visible.filter((s) => s.type !== "terminal"), ...visible.filter((s) => s.type === "terminal")];
 
-  if (mod && e.shiftKey && e.key === "n") {
+  if (mod && e.shiftKey && key === "n") {
     e.preventDefault();
     callbacks.showNewProject();
   } else if (mod && e.key === "n") {
     e.preventDefault();
     state.addSession();
     trackEvent("session_created");
+  } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "t") {
+    e.preventDefault();
+    state.addSession(undefined, "terminal");
+    trackEvent("terminal_session_created");
   } else if (mod && e.key === "w") {
     e.preventDefault();
     callbacks.confirmDeleteSession(state.activeSid);
@@ -41,19 +49,17 @@ export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCall
   } else if (e.ctrlKey && !e.metaKey && e.key >= "1" && e.key <= "9") {
     e.preventDefault();
     const idx = parseInt(e.key) - 1;
-    const proj = state.projects.find((p) => p.id === state.activePid);
-    if (proj && idx < proj.sessions.length) {
-      state.setActiveSession(proj.sessions[idx].id);
+    if (idx < sessions.length) {
+      state.setActiveSession(sessions[idx].id);
     }
   } else if (e.key === "Tab" && e.ctrlKey && !e.metaKey) {
     e.preventDefault();
-    const proj = state.projects.find((p) => p.id === state.activePid);
-    if (proj && proj.sessions.length > 1) {
-      const curIdx = proj.sessions.findIndex((ss) => ss.id === state.activeSid);
+    if (sessions.length > 1) {
+      const curIdx = sessions.findIndex((ss) => ss.id === state.activeSid);
       const next = e.shiftKey
-        ? (curIdx - 1 + proj.sessions.length) % proj.sessions.length
-        : (curIdx + 1) % proj.sessions.length;
-      state.setActiveSession(proj.sessions[next].id);
+        ? (curIdx - 1 + sessions.length) % sessions.length
+        : (curIdx + 1) % sessions.length;
+      state.setActiveSession(sessions[next].id);
     }
   }
 }

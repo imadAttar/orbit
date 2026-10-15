@@ -30,3 +30,8 @@ CLAUDE.md
 CLAUDE.local.md
 tests/computer-use/.orbit-test-state.json
 .vite/
+
+# Local verification evidence and Python caches
+__pycache__/
+*.pyc
+qa-output/

@@ -1,12 +1,12 @@
-mod watcher;
 mod claude;
 mod logging;
 mod pty;
 mod statusline;
 mod terminal;
 mod validation;
+mod watcher;
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu, AboutMetadata};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -73,9 +73,7 @@ pub fn run() {
                 app,
                 "Affichage",
                 true,
-                &[
-                    &PredefinedMenuItem::fullscreen(app, None)?,
-                ],
+                &[&PredefinedMenuItem::fullscreen(app, None)?],
             )?;
 
             #[cfg(not(target_os = "macos"))]

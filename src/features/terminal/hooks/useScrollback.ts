@@ -16,20 +16,23 @@ export function useScrollback(
 ) {
   const saveRef = useRef<() => void>(() => {});
 
-  // Keep save function in sync with latest refs
-  saveRef.current = () => {
-    if (serializeRef.current && termRef.current) {
-      try {
-        const data = serializeRef.current.serialize();
-        scrollback.save(sessionId, data);
-      } catch (err) { import("../../../lib/logger").then(({ logger }) => logger.warn("scrollback", `serialize error: ${err}`)); }
-    }
-  };
-
   useEffect(() => {
     if (!spawned) return;
 
-    const doSave = () => saveRef.current();
+    // Own this effect's instance: mutable refs may already point to its successor
+    // (or be null) when cleanup runs. Never serialize that successor here.
+    const term = termRef.current;
+    const serialize = serializeRef.current;
+    const doSave = () => {
+      if (!term || !serialize) return;
+      try {
+        const data = serialize.serialize();
+        // Empty/disposed terminals must not erase a previously persisted history.
+        // Intentional history deletion belongs to scrollback.clear, not this hook.
+        if (data) scrollback.save(sessionId, data);
+      } catch (err) { import("../../../lib/logger").then(({ logger }) => logger.warn("scrollback", `serialize error: ${err}`)); }
+    };
+    saveRef.current = doSave;
 
     const interval = setInterval(doSave, 30000);
     window.addEventListener("beforeunload", doSave);
@@ -37,10 +40,10 @@ export function useScrollback(
     return () => {
       clearInterval(interval);
       window.removeEventListener("beforeunload", doSave);
-      // Final save before cleanup
       doSave();
+      if (saveRef.current === doSave) saveRef.current = () => {};
     };
-  }, [spawned, sessionId]);
+  }, [spawned, sessionId, termRef, serializeRef]);
 
   return saveRef;
 }

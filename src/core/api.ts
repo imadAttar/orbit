@@ -46,6 +46,7 @@ export const pty = {
     sessionName?: string | null;
     dangerousMode?: boolean;
     shellOnly?: boolean;
+    generationId?: string;
   }) => call<void>("spawn_pty", args),
 
   write: (sessionId: string, data: string) =>
@@ -54,8 +55,8 @@ export const pty = {
   resize: (sessionId: string, cols: number, rows: number) =>
     call<void>("resize_pty", { sessionId, cols, rows }),
 
-  kill: (sessionId: string) =>
-    call<void>("kill_pty", { sessionId }),
+  kill: (sessionId: string, generationId?: string) =>
+    call<void>("kill_pty", { sessionId, ...(generationId === undefined ? {} : { generationId }) }),
 
   /** Fire-and-forget kill (cleanup, no error needed) */
   killSilent: (sessionId: string) =>

@@ -77,7 +77,7 @@ vi.mock("@xterm/addon-search", () => {
 
 vi.mock("@xterm/addon-serialize", () => {
   class MockSerializeAddon {
-    serialize = vi.fn().mockReturnValue("");
+    serialize = vi.fn().mockReturnValue("fixture terminal history");
   }
   return { SerializeAddon: MockSerializeAddon };
 });
@@ -118,6 +118,7 @@ vi.mock("../../core/store", () => {
     updateSessionCost: vi.fn(),
     setClaudeSessionId: vi.fn(),
     setDangerousMode: vi.fn(),
+    setSessionRuntimeStatus: vi.fn(),
   };
 
   const store = Object.assign(
@@ -186,6 +187,7 @@ describe("TerminalView integration", () => {
         projectDir: "/home/user/project",
         cols: 120,
         rows: 40,
+        generationId: expect.any(String),
         claudeSessionId: expect.any(String),
         resumeMode: false,
         sessionName: null,
@@ -203,6 +205,7 @@ describe("TerminalView integration", () => {
         projectDir: "/home/user/project",
         cols: 80,
         rows: 24,
+        generationId: expect.any(String),
         claudeSessionId: expect.any(String),
         resumeMode: false,
         sessionName: null,
@@ -225,6 +228,7 @@ describe("TerminalView integration", () => {
 
       const calls = mockInvoke.mock.calls.map((c: unknown[]) => c[0]);
       expect(calls).toContain("save_scrollback");
+      expect(mockInvoke).toHaveBeenCalledWith("save_scrollback", { sessionId: "sess-1", data: "fixture terminal history" });
     });
 
     it("disposes the xterm terminal instance", async () => {

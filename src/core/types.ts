@@ -7,6 +7,11 @@ export type Session = {
   claudeSessionId?: string; // Claude Code CLI session UUID for --resume
   dangerousMode?: boolean; // true = yolo mode (skip all permission prompts)
   hasConversation?: boolean; // true once the user has sent at least one prompt; gates --resume
+  archivedAt?: number; // reversible: keep identity, conversation and scrollback
+  lastActivityAt?: number;
+  unread?: boolean;
+  runtimeStatus?: "running" | "exited" | "failed";
+  failureReason?: "spawn" | "resume";
 };
 
 export type Project = {

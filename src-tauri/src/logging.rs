@@ -4,7 +4,7 @@
 //! PRIVACY: Never log prompt content, session transcripts, or user input.
 
 use tracing_appender::rolling;
-use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Initialize the logging system. Call once at app startup.
 pub fn init() {
@@ -58,7 +58,11 @@ fn cleanup_old_logs(dir: &std::path::Path, keep: usize) {
     }
 
     // Sort by modified time, oldest first
-    entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH));
+    entries.sort_by_key(|e| {
+        e.metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+    });
 
     for entry in entries.iter().take(entries.len() - keep) {
         let _ = std::fs::remove_file(entry.path());

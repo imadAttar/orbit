@@ -8,6 +8,7 @@ use std::thread;
 use tauri::{AppHandle, Emitter, State};
 
 struct PtySession {
+    generation_id: Option<String>,
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
@@ -15,12 +16,15 @@ struct PtySession {
 }
 
 pub struct PtyState {
+    // Covers the entire remove -> spawn -> insert transition, including kill.
+    transitions: Mutex<()>,
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 }
 
 impl PtyState {
     pub fn new() -> Self {
         Self {
+            transitions: Mutex::new(()),
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -29,7 +33,15 @@ impl PtyState {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct PtyOutput {
     session_id: String,
+    generation_id: Option<String>,
     data: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct PtyExit {
+    session_id: String,
+    generation_id: Option<String>,
+    exit_code: Option<u32>,
 }
 
 /// Get the user home directory cross-platform.
@@ -39,6 +51,8 @@ pub fn home_dir() -> String {
         .unwrap_or_default()
 }
 
+// Tauri command arguments are the public invoke boundary; keep each field explicit.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn spawn_pty(
     app: AppHandle,
@@ -52,11 +66,14 @@ pub fn spawn_pty(
     session_name: Option<String>,
     dangerous_mode: Option<bool>,
     shell_only: Option<bool>,
+    generation_id: Option<String>,
 ) -> Result<(), String> {
     tracing::info!(session_id = %session_id, project_dir = %project_dir, cols, rows, shell_only = shell_only.unwrap_or(false), "Spawning PTY");
     if !std::path::Path::new(&project_dir).is_dir() {
         return Err(format!("Repertoire projet introuvable : {project_dir}"));
     }
+
+    let _transition = state.transitions.lock().unwrap_or_else(|e| e.into_inner());
 
     // Kill any existing PTY for this session_id so we don't leak a phantom
     // child that keeps emitting output into the new terminal (e.g. mode toggle).
@@ -91,7 +108,11 @@ pub fn spawn_pty(
     // Shell-only mode: spawn user's default shell instead of Claude
     let mut cmd = if shell_only.unwrap_or(false) {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-            if cfg!(target_os = "windows") { "cmd.exe".to_string() } else { "/bin/sh".to_string() }
+            if cfg!(target_os = "windows") {
+                "cmd.exe".to_string()
+            } else {
+                "/bin/sh".to_string()
+            }
         });
         CommandBuilder::new(shell)
     } else {
@@ -125,18 +146,42 @@ pub fn spawn_pty(
 
     // Inherit only safe environment variables
     let allowed_vars = [
-        "HOME", "USERPROFILE", "USER", "USERNAME", "LOGNAME",
-        "PATH", "SHELL", "TERM", "LANG", "LC_ALL", "LC_CTYPE",
-        "EDITOR", "VISUAL", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
-        "ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR",
-        "TMPDIR", "TMP", "TEMP",
-        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-        "SSH_AUTH_SOCK", "SSH_AGENT_PID",
-        "DISPLAY", "WAYLAND_DISPLAY",
-        "COLORTERM", "TERM_PROGRAM",
+        "HOME",
+        "USERPROFILE",
+        "USER",
+        "USERNAME",
+        "LOGNAME",
+        "PATH",
+        "SHELL",
+        "TERM",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "EDITOR",
+        "VISUAL",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CONFIG_DIR",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "SSH_AUTH_SOCK",
+        "SSH_AGENT_PID",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "COLORTERM",
+        "TERM_PROGRAM",
     ];
     for (key, value) in std::env::vars() {
-        if allowed_vars.contains(&key.as_str()) || key.starts_with("CLAUDE_") || key.starts_with("NVM_") || key.starts_with("FNM_") {
+        if allowed_vars.contains(&key.as_str())
+            || key.starts_with("CLAUDE_")
+            || key.starts_with("NVM_")
+            || key.starts_with("FNM_")
+        {
             cmd.env(key, value);
         }
     }
@@ -145,21 +190,31 @@ pub fn spawn_pty(
     let home = home_dir();
 
     #[cfg(not(target_os = "windows"))]
-    let (extra_paths, separator): (Vec<String>, &str) = (vec![
-        format!("{home}/.local/bin"),
-        format!("{home}/.npm-global/bin"),
-        "/opt/homebrew/bin".into(),
-        "/usr/local/bin".into(),
-    ], ":");
+    let (extra_paths, separator): (Vec<String>, &str) = (
+        vec![
+            format!("{home}/.local/bin"),
+            format!("{home}/.npm-global/bin"),
+            "/opt/homebrew/bin".into(),
+            "/usr/local/bin".into(),
+        ],
+        ":",
+    );
 
     #[cfg(target_os = "windows")]
-    let (extra_paths, separator): (Vec<String>, &str) = (vec![
-        format!("{home}\\AppData\\Roaming\\npm"),
-        "C:\\Program Files\\nodejs".into(),
-    ], ";");
+    let (extra_paths, separator): (Vec<String>, &str) = (
+        vec![
+            format!("{home}\\AppData\\Roaming\\npm"),
+            "C:\\Program Files\\nodejs".into(),
+        ],
+        ";",
+    );
 
     let full_path = std::iter::once(&path_env)
-        .chain(extra_paths.iter().filter(|p| !path_env.contains(p.as_str())))
+        .chain(
+            extra_paths
+                .iter()
+                .filter(|p| !path_env.contains(p.as_str())),
+        )
         .cloned()
         .collect::<Vec<_>>()
         .join(separator);
@@ -187,13 +242,11 @@ pub fn spawn_pty(
     let killed_clone = Arc::clone(&killed);
 
     {
-        let mut sessions = state
-            .sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
         sessions.insert(
             session_id.clone(),
             PtySession {
+                generation_id: generation_id.clone(),
                 master: pair.master,
                 writer,
                 child,
@@ -206,7 +259,14 @@ pub fn spawn_pty(
     let app_clone = app.clone();
     let sessions_arc = Arc::clone(&state.sessions);
     thread::spawn(move || {
-        read_pty_output(reader, sid, app_clone, sessions_arc, killed_clone);
+        read_pty_output(
+            reader,
+            sid,
+            app_clone,
+            sessions_arc,
+            killed_clone,
+            generation_id,
+        );
     });
 
     Ok(())
@@ -244,6 +304,7 @@ fn read_pty_output(
     app: AppHandle,
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
     killed: Arc<AtomicBool>,
+    generation_id: Option<String>,
 ) {
     let mut buf = [0u8; 4096];
     let mut leftover = Vec::new();
@@ -253,7 +314,10 @@ fn read_pty_output(
             break;
         }
         let offset = leftover.len();
-        debug_assert!(offset <= 3, "leftover should be at most 3 bytes from incomplete UTF-8");
+        debug_assert!(
+            offset <= 3,
+            "leftover should be at most 3 bytes from incomplete UTF-8"
+        );
         if offset > 0 && offset < buf.len() {
             buf[..offset].copy_from_slice(&leftover);
             leftover.clear();
@@ -263,6 +327,10 @@ fn read_pty_output(
         match reader.read(&mut buf[offset..]) {
             Ok(0) => break,
             Ok(n) => {
+                // read() may have blocked while this generation was killed.
+                if killed.load(Ordering::Relaxed) {
+                    break;
+                }
                 let total = offset + n;
                 let tail = incomplete_utf8_tail(&buf[..total]);
                 let valid_end = total - tail;
@@ -270,11 +338,12 @@ fn read_pty_output(
                     leftover.extend_from_slice(&buf[valid_end..total]);
                 }
                 let data = String::from_utf8_lossy(&buf[..valid_end]).to_string();
-                if !data.is_empty() {
+                if !data.is_empty() && !killed.load(Ordering::Relaxed) {
                     let _ = app.emit(
                         "pty-output",
                         PtyOutput {
                             session_id: session_id.clone(),
+                            generation_id: generation_id.clone(),
                             data,
                         },
                     );
@@ -294,15 +363,39 @@ fn read_pty_output(
             "pty-output",
             PtyOutput {
                 session_id: session_id.clone(),
+                generation_id: generation_id.clone(),
                 data: "\r\n\x1b[33m[Session terminee — cree une nouvelle session pour continuer]\x1b[0m\r\n"
                     .to_string(),
             },
         );
     }
-    // Only clean up if not already removed by kill_pty
+    // Remove only THIS reader's process. A respawn may already have installed
+    // another PTY under the same session ID while the old reader was exiting.
     if !killed.load(Ordering::Relaxed) {
-        let mut map = sessions.lock().unwrap_or_else(|e| e.into_inner());
-        map.remove(&session_id);
+        let finished = {
+            let mut map = sessions.lock().unwrap_or_else(|e| e.into_inner());
+            if map
+                .get(&session_id)
+                .is_some_and(|s| Arc::ptr_eq(&s.killed, &killed))
+            {
+                map.remove(&session_id)
+            } else {
+                None
+            }
+        };
+        if let Some(mut finished) = finished {
+            let exit_code = finished.child.wait().ok().map(|status| status.exit_code());
+            if !killed.load(Ordering::Relaxed) {
+                let _ = app.emit(
+                    "pty-exit",
+                    PtyExit {
+                        session_id,
+                        generation_id,
+                        exit_code,
+                    },
+                );
+            }
+        }
     }
 }
 
@@ -312,11 +405,9 @@ pub fn write_pty(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let mut sessions = state
-        .sessions
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let session = sessions.get_mut(&session_id)
+    let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+    let session = sessions
+        .get_mut(&session_id)
         .ok_or_else(|| format!("Session {session_id} not found (process may have exited)"))?;
     session
         .writer
@@ -336,11 +427,9 @@ pub fn resize_pty(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let sessions = state
-        .sessions
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let session = sessions.get(&session_id)
+    let sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+    let session = sessions
+        .get(&session_id)
         .ok_or_else(|| format!("Session {session_id} not found (process may have exited)"))?;
     session
         .master
@@ -354,14 +443,37 @@ pub fn resize_pty(
     Ok(())
 }
 
+/// Remove under the caller's map lock, so matching and removal are atomic.
+fn remove_session_for_generation<T>(
+    sessions: &mut HashMap<String, T>,
+    session_id: &str,
+    expected: Option<&str>,
+    generation: impl FnOnce(&T) -> Option<&str>,
+) -> Option<T> {
+    if sessions
+        .get(session_id)
+        .is_some_and(|session| expected.is_none() || generation(session) == expected)
+    {
+        sessions.remove(session_id)
+    } else {
+        None
+    }
+}
+
 #[tauri::command]
-pub fn kill_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), String> {
+pub fn kill_pty(
+    state: State<'_, PtyState>,
+    session_id: String,
+    generation_id: Option<String>,
+) -> Result<(), String> {
     tracing::info!(session_id = %session_id, "Killing PTY");
-    let mut sessions = state
-        .sessions
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if let Some(mut session) = sessions.remove(&session_id) {
+    let _transition = state.transitions.lock().unwrap_or_else(|e| e.into_inner());
+    let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(mut session) =
+        remove_session_for_generation(&mut sessions, &session_id, generation_id.as_deref(), |s| {
+            s.generation_id.as_deref()
+        })
+    {
         // Signal reader thread to stop before killing the child
         session.killed.store(true, Ordering::Relaxed);
         if let Err(e) = session.child.kill() {
@@ -380,41 +492,116 @@ pub fn kill_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), St
 
 #[cfg(test)]
 mod tests {
-    use super::incomplete_utf8_tail;
+    use super::{incomplete_utf8_tail, remove_session_for_generation, PtyExit};
+    use std::collections::HashMap;
 
     #[test]
-    fn ascii_only() { assert_eq!(incomplete_utf8_tail(b"hello"), 0); }
+    fn conditional_kill_preserves_replacement_and_removes_only_matching_generation() {
+        let mut sessions = HashMap::from([("s1".to_string(), Some("new".to_string()))]);
+        assert!(
+            remove_session_for_generation(&mut sessions, "s1", Some("old"), |s| s.as_deref())
+                .is_none()
+        );
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(
+            remove_session_for_generation(&mut sessions, "s1", Some("new"), |s| s.as_deref()),
+            Some(Some("new".to_string()))
+        );
+        assert!(sessions.is_empty());
+    }
+
     #[test]
-    fn empty_buffer() { assert_eq!(incomplete_utf8_tail(b""), 0); }
+    fn unconditional_kill_supports_legacy_sessions_but_conditional_kill_does_not() {
+        let mut sessions = HashMap::from([("s1".to_string(), None::<String>)]);
+        assert!(
+            remove_session_for_generation(&mut sessions, "s1", Some("old"), |s| s.as_deref())
+                .is_none()
+        );
+        assert_eq!(
+            remove_session_for_generation(&mut sessions, "s1", None, |s| s.as_deref()),
+            Some(None)
+        );
+        assert!(
+            remove_session_for_generation(&mut sessions, "s1", None, |s| s.as_deref()).is_none()
+        );
+    }
+
     #[test]
-    fn complete_2byte_utf8() { assert_eq!(incomplete_utf8_tail(&[0xC3, 0xA9]), 0); }
+    fn process_exit_payload_is_structured_and_has_no_terminal_content() {
+        let payload = serde_json::to_value(PtyExit {
+            session_id: "fixture-session".into(),
+            generation_id: Some("generation-1".into()),
+            exit_code: Some(7),
+        })
+        .unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({"session_id":"fixture-session", "generation_id":"generation-1", "exit_code":7})
+        );
+    }
+
     #[test]
-    fn incomplete_2byte_utf8() { assert_eq!(incomplete_utf8_tail(&[0xC3]), 1); }
+    fn ascii_only() {
+        assert_eq!(incomplete_utf8_tail(b"hello"), 0);
+    }
     #[test]
-    fn complete_3byte_utf8() { assert_eq!(incomplete_utf8_tail(&[0xE2, 0x82, 0xAC]), 0); }
+    fn empty_buffer() {
+        assert_eq!(incomplete_utf8_tail(b""), 0);
+    }
     #[test]
-    fn incomplete_3byte_missing_1() { assert_eq!(incomplete_utf8_tail(&[0xE2, 0x82]), 2); }
+    fn complete_2byte_utf8() {
+        assert_eq!(incomplete_utf8_tail(&[0xC3, 0xA9]), 0);
+    }
     #[test]
-    fn incomplete_3byte_missing_2() { assert_eq!(incomplete_utf8_tail(&[0xE2]), 1); }
+    fn incomplete_2byte_utf8() {
+        assert_eq!(incomplete_utf8_tail(&[0xC3]), 1);
+    }
     #[test]
-    fn complete_4byte_utf8() { assert_eq!(incomplete_utf8_tail(&[0xF0, 0x9D, 0x84, 0x9E]), 0); }
+    fn complete_3byte_utf8() {
+        assert_eq!(incomplete_utf8_tail(&[0xE2, 0x82, 0xAC]), 0);
+    }
     #[test]
-    fn incomplete_4byte_missing_1() { assert_eq!(incomplete_utf8_tail(&[0xF0, 0x9D, 0x84]), 3); }
+    fn incomplete_3byte_missing_1() {
+        assert_eq!(incomplete_utf8_tail(&[0xE2, 0x82]), 2);
+    }
     #[test]
-    fn incomplete_4byte_missing_2() { assert_eq!(incomplete_utf8_tail(&[0xF0, 0x9D]), 2); }
+    fn incomplete_3byte_missing_2() {
+        assert_eq!(incomplete_utf8_tail(&[0xE2]), 1);
+    }
     #[test]
-    fn incomplete_4byte_missing_3() { assert_eq!(incomplete_utf8_tail(&[0xF0]), 1); }
+    fn complete_4byte_utf8() {
+        assert_eq!(incomplete_utf8_tail(&[0xF0, 0x9D, 0x84, 0x9E]), 0);
+    }
     #[test]
-    fn ascii_after_complete_utf8() { assert_eq!(incomplete_utf8_tail(&[0xC3, 0xA9, b'a']), 0); }
+    fn incomplete_4byte_missing_1() {
+        assert_eq!(incomplete_utf8_tail(&[0xF0, 0x9D, 0x84]), 3);
+    }
     #[test]
-    fn incomplete_at_end_of_ascii() { assert_eq!(incomplete_utf8_tail(&[b'a', b'b', 0xC3]), 1); }
+    fn incomplete_4byte_missing_2() {
+        assert_eq!(incomplete_utf8_tail(&[0xF0, 0x9D]), 2);
+    }
+    #[test]
+    fn incomplete_4byte_missing_3() {
+        assert_eq!(incomplete_utf8_tail(&[0xF0]), 1);
+    }
+    #[test]
+    fn ascii_after_complete_utf8() {
+        assert_eq!(incomplete_utf8_tail(&[0xC3, 0xA9, b'a']), 0);
+    }
+    #[test]
+    fn incomplete_at_end_of_ascii() {
+        assert_eq!(incomplete_utf8_tail(&[b'a', b'b', 0xC3]), 1);
+    }
 
     use super::home_dir;
 
     #[test]
     fn home_dir_returns_non_empty() {
         let home = home_dir();
-        assert!(!home.is_empty(), "home_dir() should return a non-empty string");
+        assert!(
+            !home.is_empty(),
+            "home_dir() should return a non-empty string"
+        );
     }
 
     #[test]
@@ -425,28 +612,47 @@ mod tests {
         unsafe { std::env::set_var("USERPROFILE", "/test/fallback") };
         let result = home_dir();
         assert_eq!(result, "/test/fallback");
-        if let Some(h) = original_home { unsafe { std::env::set_var("HOME", h) }; }
-        if let Some(p) = original_profile { unsafe { std::env::set_var("USERPROFILE", p) }; }
-        else { unsafe { std::env::remove_var("USERPROFILE") }; }
+        if let Some(h) = original_home {
+            unsafe { std::env::set_var("HOME", h) };
+        }
+        if let Some(p) = original_profile {
+            unsafe { std::env::set_var("USERPROFILE", p) };
+        } else {
+            unsafe { std::env::remove_var("USERPROFILE") };
+        }
     }
 
     #[test]
-    fn single_continuation_byte() { assert_eq!(incomplete_utf8_tail(&[0x80]), 0); }
+    fn single_continuation_byte() {
+        assert_eq!(incomplete_utf8_tail(&[0x80]), 0);
+    }
     #[test]
-    fn single_continuation_byte_after_ascii() { assert_eq!(incomplete_utf8_tail(&[b'x', 0xBF]), 0); }
+    fn single_continuation_byte_after_ascii() {
+        assert_eq!(incomplete_utf8_tail(&[b'x', 0xBF]), 0);
+    }
     #[test]
-    fn four_byte_split_after_1() { assert_eq!(incomplete_utf8_tail(&[b'a', 0xF0]), 1); }
+    fn four_byte_split_after_1() {
+        assert_eq!(incomplete_utf8_tail(&[b'a', 0xF0]), 1);
+    }
     #[test]
-    fn four_byte_split_after_2() { assert_eq!(incomplete_utf8_tail(&[b'a', 0xF0, 0x9D]), 2); }
+    fn four_byte_split_after_2() {
+        assert_eq!(incomplete_utf8_tail(&[b'a', 0xF0, 0x9D]), 2);
+    }
     #[test]
-    fn four_byte_split_after_3() { assert_eq!(incomplete_utf8_tail(&[b'a', 0xF0, 0x9D, 0x84]), 3); }
+    fn four_byte_split_after_3() {
+        assert_eq!(incomplete_utf8_tail(&[b'a', 0xF0, 0x9D, 0x84]), 3);
+    }
     #[test]
-    fn four_byte_complete_after_ascii() { assert_eq!(incomplete_utf8_tail(&[b'a', 0xF0, 0x9D, 0x84, 0x9E]), 0); }
+    fn four_byte_complete_after_ascii() {
+        assert_eq!(incomplete_utf8_tail(&[b'a', 0xF0, 0x9D, 0x84, 0x9E]), 0);
+    }
     #[test]
     fn multiple_complete_then_incomplete() {
         let buf = &[0xC3, 0xA9, 0xC3, 0xA9, 0xE2, 0x82];
         assert_eq!(incomplete_utf8_tail(buf), 2);
     }
     #[test]
-    fn three_continuation_bytes_only() { assert_eq!(incomplete_utf8_tail(&[0x80, 0x80, 0x80]), 0); }
+    fn three_continuation_bytes_only() {
+        assert_eq!(incomplete_utf8_tail(&[0x80, 0x80, 0x80]), 0);
+    }
 }

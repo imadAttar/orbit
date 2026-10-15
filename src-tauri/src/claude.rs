@@ -1,13 +1,27 @@
 use crate::pty::home_dir;
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
-/// Cached claude binary path — resolved once, reused across all PTY spawns.
-static CLAUDE_PATH: OnceLock<Option<String>> = OnceLock::new();
+/// Cache successful lookups only; a missing installation must be discoverable later.
+static CLAUDE_PATH: Mutex<Option<String>> = Mutex::new(None);
 
 /// Resolve the full path to the `claude` binary.
 /// Desktop apps launched from Finder/Explorer have a minimal PATH.
 pub(crate) fn resolve_claude_path() -> Option<String> {
-    CLAUDE_PATH.get_or_init(resolve_claude_path_inner).clone()
+    resolve_claude_path_cached(&CLAUDE_PATH, resolve_claude_path_inner, |path| {
+        std::path::Path::new(path).is_file()
+    })
+}
+
+fn resolve_claude_path_cached(
+    cache: &Mutex<Option<String>>,
+    discover: impl FnOnce() -> Option<String>,
+    is_valid: impl Fn(&str) -> bool,
+) -> Option<String> {
+    let mut cached = cache.lock().unwrap_or_else(|error| error.into_inner());
+    if !cached.as_deref().is_some_and(&is_valid) {
+        *cached = discover().filter(|path| is_valid(path));
+    }
+    cached.clone()
 }
 
 /// Candidate paths for the `claude` binary on Unix (macOS, Linux).
@@ -96,94 +110,56 @@ pub fn install_claude() -> Result<String, String> {
     }
 }
 
-/// Filter out clarification/refusal responses that shouldn't become a session title.
-fn is_valid_title(title: &str) -> bool {
-    if title.is_empty() {
-        return false;
+/// Build a useful local title when the optional AI title request is unavailable.
+fn fallback_title(prompt: &str) -> String {
+    let mut words: Vec<&str> = prompt.split_whitespace().collect();
+
+    while words.first().is_some_and(|word| word.starts_with('/')) {
+        words.remove(0);
     }
-    // Questions are never titles
-    if title.contains('?') || title.contains('¿') {
-        return false;
-    }
-    let word_count = title.split_whitespace().count();
-    if word_count == 0 || word_count > 10 {
-        return false;
-    }
-    if title.chars().count() > 80 {
-        return false;
-    }
-    // Known patterns of clarification/refusal responses
-    let lower = title.to_lowercase();
-    const INVALID_PATTERNS: &[&str] = &[
-        "je ne comprends",
-        "je ne peux pas",
-        "pourriez-vous",
-        "pouvez-vous",
-        "clarifier",
-        "clarification",
-        "préciser",
-        "preciser",
-        "i don't understand",
-        "i cannot",
-        "i can't",
-        "could you",
-        "please clarify",
-        "please provide",
-        "unclear",
-        "what do you",
-        "what would you",
-        "titre pour",
-        "title for",
+
+    const POLITE_PREFIXES: &[&[&str]] = &[
+        &["Peux-tu"],
+        &["Pouvez-vous"],
+        &["Can", "you"],
+        &["Could", "you"],
+        &["Please"],
     ];
-    for p in INVALID_PATTERNS {
-        if lower.contains(p) {
-            return false;
+    for prefix in POLITE_PREFIXES {
+        if words.len() >= prefix.len()
+            && words[..prefix.len()]
+                .iter()
+                .zip(prefix.iter())
+                .all(|(word, expected)| word.eq_ignore_ascii_case(expected))
+        {
+            words.drain(..prefix.len());
+            break;
         }
     }
-    true
+
+    let mut title = words
+        .into_iter()
+        .take(7)
+        .map(|word| word.trim_matches(|c: char| c.is_ascii_punctuation()))
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if title.is_empty() {
+        return "Session".into();
+    }
+
+    if let Some(first) = title.chars().next() {
+        let uppercase = first.to_uppercase().collect::<String>();
+        title.replace_range(..first.len_utf8(), &uppercase);
+    }
+    title.chars().take(80).collect()
 }
 
+/// Session titles are generated locally: no subprocess, network, or additional cost.
 #[tauri::command]
 pub async fn generate_title(prompt: String) -> Result<String, String> {
-    let claude_bin = resolve_claude_path()
-        .ok_or_else(|| "Claude Code CLI non installe".to_string())?;
-
-    let system = "You are a title generator. Output ONLY a short title (3-6 words) that summarizes the user's request below. Rules: no quotes, no punctuation, no questions, no clarifications, no alternatives, no explanation. If the request is unclear, infer a plausible topic and still output a title. Never ask questions. Never refuse. Just the title.";
-    let full_prompt = format!("{system}\n\nRequest: {prompt}\n\nTitle:");
-
-    let output = tauri::async_runtime::spawn_blocking(move || {
-        use std::sync::mpsc;
-        let (tx, rx) = mpsc::channel();
-        let bin = claude_bin.clone();
-        std::thread::spawn(move || {
-            let result = std::process::Command::new(&bin)
-                .args(["-p", &full_prompt, "--output-format", "text", "--model", "haiku"])
-                .output();
-            let _ = tx.send(result);
-        });
-        match rx.recv_timeout(std::time::Duration::from_secs(15)) {
-            Ok(result) => result.map_err(|e| format!("Erreur execution claude: {e}")),
-            Err(_) => Err("Timeout generation titre".to_string()),
-        }
-    })
-    .await
-    .map_err(|e| format!("Task error: {e}"))??;
-
-    if output.status.success() {
-        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        // Take only the first line to avoid verbose responses
-        let title = raw.lines().next().unwrap_or(&raw).trim();
-        // Strip surrounding quotes/asterisks if present
-        let title = title.trim_matches(|c| c == '"' || c == '\'' || c == '*').trim();
-        if !is_valid_title(title) {
-            Err("Titre invalide".into())
-        } else {
-            Ok(title.to_string())
-        }
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Erreur claude: {stderr}"))
-    }
+    Ok(fallback_title(&prompt))
 }
 
 /// Extract the last user message from a Claude Code JSONL transcript.
@@ -243,7 +219,7 @@ fn read_last_user_message(path: &str) -> Result<String, String> {
     Err("Aucun message utilisateur trouvé".into())
 }
 
-/// Read last user message from transcript then generate a session title with Haiku.
+/// Read the last user message and derive a local title without an AI request.
 #[tauri::command]
 pub async fn generate_session_title(transcript_path: String) -> Result<String, String> {
     let prompt = read_last_user_message(&transcript_path)?;
@@ -257,8 +233,14 @@ pub async fn generate_session_title(transcript_path: String) -> Result<String, S
 pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
     use serde_json::{json, Map, Value};
 
-    // orbit-session-state: inline hook — writes per-project state to ~/.orbit/session-{cwd_hash}.json
-    let hook_command = "python3 -c \"_m='orbit-session-state'; import sys,json,hashlib,os,pathlib,time; d=json.load(sys.stdin); e=d.get('hook_event_name',''); s={'Stop':'idle','Notification':'waiting'}.get(e,'working'); o={'session_id':d.get('session_id',''),'state':s,'ts':int(time.time()*1000),'tool':d.get('tool_name'),'transcript_path':d.get('transcript_path') if e=='Stop' else None}; h=hashlib.md5(os.getcwd().encode()).hexdigest()[:8]; p=pathlib.Path.home()/'.orbit'; p.mkdir(exist_ok=True); (p/f'session-{h}.json').write_text(json.dumps(o))\"";
+    // Separate state per conversation so agents in the same project cannot overwrite each other.
+    let hook_command = "python3 -c \"_m='orbit-session-state'; import sys,json,hashlib,os,pathlib,time,tempfile; d=json.load(sys.stdin); e=d.get('hook_event_name',''); s={'Stop':'idle','Notification':'waiting'}.get(e,'working'); o={'session_id':d.get('session_id',''),'state':s,'ts':int(time.time()*1000),'tool':d.get('tool_name'),'transcript_path':d.get('transcript_path') if e=='Stop' else None}; h=hashlib.md5((os.getcwd()+d.get('session_id','')).encode()).hexdigest()[:16]; p=pathlib.Path.home()/'.orbit'; p.mkdir(exist_ok=True); f=tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=p,prefix=f'session-{h}-',suffix='.tmp',delete=False); f.write(json.dumps(o)); f.close(); os.replace(f.name,p/f'session-{h}.json')\"";
+
+    let hook_command = if cfg!(windows) {
+        hook_command.replacen("python3 ", "python ", 1)
+    } else {
+        hook_command.to_string()
+    };
 
     let settings_dir = std::path::Path::new(&project_dir).join(".claude");
     let settings_path = settings_dir.join("settings.local.json");
@@ -272,7 +254,7 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
         json!({})
     };
 
-    let events = ["Notification", "PreToolUse", "Stop"];
+    let events = ["UserPromptSubmit", "Notification", "PreToolUse", "Stop"];
 
     let hooks_obj = settings
         .as_object_mut()
@@ -351,7 +333,7 @@ pub fn check_session_hooks(project_dir: String) -> bool {
         return false;
     };
 
-    let events = ["Notification", "PreToolUse", "Stop"];
+    let events = ["UserPromptSubmit", "Notification", "PreToolUse", "Stop"];
     events.iter().all(|event| {
         settings
             .get("hooks")
@@ -379,6 +361,70 @@ pub fn check_session_hooks(project_dir: String) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_path_cache_retries_after_missing_installation() {
+        let cache = Mutex::new(None);
+        assert_eq!(resolve_claude_path_cached(&cache, || None, |_| true), None);
+        assert_eq!(
+            resolve_claude_path_cached(&cache, || Some("/test/claude".into()), |_| true),
+            Some("/test/claude".into()),
+            "a failed lookup must not hide a later installation"
+        );
+    }
+
+    #[test]
+    fn claude_path_cache_rediscovers_stale_path() {
+        let cache = Mutex::new(None);
+        assert_eq!(
+            resolve_claude_path_cached(&cache, || Some("/old/claude".into()), |_| true),
+            Some("/old/claude".into())
+        );
+        assert_eq!(
+            resolve_claude_path_cached(
+                &cache,
+                || Some("/new/claude".into()),
+                |path| path == "/new/claude",
+            ),
+            Some("/new/claude".into()),
+            "a removed binary must trigger a fresh lookup"
+        );
+    }
+
+    #[test]
+    fn claude_path_cache_rejects_invalid_discovery() {
+        let cache = Mutex::new(None);
+        assert_eq!(
+            resolve_claude_path_cached(&cache, || Some("/removed/claude".into()), |_| false),
+            None,
+            "a lookup result that is no longer a file must not be cached"
+        );
+        assert_eq!(*cache.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn claude_path_cache_reuses_valid_path_without_discovery() {
+        let cache = Mutex::new(Some("/test/claude".into()));
+        assert_eq!(
+            resolve_claude_path_cached(
+                &cache,
+                || panic!("a valid cache entry must skip discovery"),
+                |path| path == "/test/claude",
+            ),
+            Some("/test/claude".into())
+        );
+    }
+
+    #[test]
+    fn claude_path_cache_clears_removed_path_and_allows_reinstallation() {
+        let cache = Mutex::new(Some("/old/claude".into()));
+        assert_eq!(resolve_claude_path_cached(&cache, || None, |_| false), None);
+        assert_eq!(*cache.lock().unwrap(), None);
+        assert_eq!(
+            resolve_claude_path_cached(&cache, || Some("/new/claude".into()), |_| true),
+            Some("/new/claude".into())
+        );
+    }
 
     #[test]
     fn windows_claude_candidates_prefer_exe_over_cmd_in_npm_dir() {
@@ -423,5 +469,102 @@ mod tests {
         assert!(candidates.iter().any(|c| c == "/Users/u/.local/bin/claude"));
         assert!(candidates.iter().any(|c| c == "/opt/homebrew/bin/claude"));
         assert!(candidates.iter().any(|c| c == "/usr/local/bin/claude"));
+    }
+
+    #[test]
+    fn installed_hooks_keep_parallel_sessions_in_separate_files() {
+        let dir = std::env::temp_dir().join(format!("orbit-hooks-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        enable_session_hooks(dir.to_string_lossy().into()).unwrap();
+        let raw = std::fs::read_to_string(dir.join(".claude/settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert!(
+            settings["hooks"]["UserPromptSubmit"].is_array(),
+            "working starts on prompt submission, even before the first tool"
+        );
+        let cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(cmd.starts_with(if cfg!(windows) {
+            "python -c"
+        } else {
+            "python3 -c"
+        }));
+        assert!(cmd.contains("session_id"));
+        let script = cmd
+            .split_once("-c \"")
+            .unwrap()
+            .1
+            .strip_suffix('"')
+            .unwrap();
+        // Instrument the generated Python, never the user's HOME. Validate the file
+        // at the atomic publication boundary and ensure temporary names are unique.
+        let instrumented = format!(
+            "import os,pathlib,json\nreal_replace=os.replace\ncalls=[]\ndef checked_replace(src,dst):\n src=pathlib.Path(src); dst=pathlib.Path(dst)\n assert src.suffix=='.tmp' and src.parent==dst.parent\n assert dst.name.startswith('session-') and dst.suffix=='.json'\n payload=json.loads(src.read_text()); assert payload['ts']>0\n trace=pathlib.Path.home()/'temp-names'\n names=trace.read_text().splitlines() if trace.exists() else []\n assert str(src) not in names\n trace.write_text('\\n'.join(names+[str(src)]))\n calls.append(str(src)); return real_replace(src,dst)\nos.replace=checked_replace\n{script}\nassert len(calls)==1, 'hook must publish with os.replace'\n"
+        );
+        for sid in ["agent-one", "agent-two", "agent-one"] {
+            use std::io::Write;
+            use std::process::{Command, Stdio};
+            let mut child = Command::new(if cfg!(windows) { "python" } else { "python3" })
+                .args(["-c", &instrumented])
+                .current_dir(&dir)
+                .env("HOME", &dir)
+                .env("USERPROFILE", &dir)
+                .stdin(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(
+                    serde_json::json!({"session_id": sid, "hook_event_name": "Stop"})
+                        .to_string()
+                        .as_bytes(),
+                )
+                .unwrap();
+            assert!(child.wait().unwrap().success());
+        }
+        let files: Vec<_> = std::fs::read_dir(dir.join(".orbit")).unwrap().collect();
+        assert_eq!(
+            files.len(),
+            2,
+            "parallel agents must not overwrite each other's state"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn fallback_title_uses_meaningful_prompt_words() {
+        assert_eq!(
+            fallback_title("Peux-tu corriger le bug de connexion sur Windows ?"),
+            "Corriger le bug de connexion sur Windows"
+        );
+    }
+
+    #[test]
+    fn fallback_title_skips_commands_and_truncates_long_prompts() {
+        assert_eq!(
+            fallback_title("/plan Ajouter une authentification robuste avec rotation automatique des jetons et journalisation detaillee"),
+            "Ajouter une authentification robuste avec rotation automatique"
+        );
+    }
+
+    #[test]
+    fn fallback_title_handles_empty_prompt() {
+        assert_eq!(fallback_title("  /coach   "), "Session");
+    }
+
+    #[test]
+    fn session_title_is_immediate_and_local_even_when_claude_is_installed() {
+        let title =
+            tauri::async_runtime::block_on(generate_title("Peux-tu corriger la connexion".into()))
+                .unwrap();
+        assert_eq!(title, "Corriger la connexion");
+    }
+
+    #[test]
+    fn local_title_is_bounded_for_single_unbroken_input() {
+        assert!(fallback_title(&"é".repeat(1000)).chars().count() <= 80);
     }
 }

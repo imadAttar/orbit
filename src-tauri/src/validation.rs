@@ -1,5 +1,5 @@
-/// Centralized path validation utilities.
-/// All path safety checks go through this module.
+//! Centralized path validation utilities.
+//! All path safety checks go through this module.
 
 /// Validate a directory path contains no shell metacharacters or path traversal.
 pub fn validate_dir(dir: &str) -> Result<(), String> {
@@ -8,7 +8,9 @@ pub fn validate_dir(dir: &str) -> Result<(), String> {
         return Err("Chemin invalide (traversee de repertoire interdite)".to_string());
     }
 
-    let dangerous = ['\'', '"', '`', '$', ';', '|', '&', '\n', '%', '^', '<', '>', '(', ')', '!'];
+    let dangerous = [
+        '\'', '"', '`', '$', ';', '|', '&', '\n', '%', '^', '<', '>', '(', ')', '!',
+    ];
     #[cfg(not(target_os = "windows"))]
     let dangerous_with_backslash: Vec<char> = dangerous
         .iter()
@@ -68,7 +70,11 @@ pub fn validate_project_dir(dir: &str) -> Result<(), String> {
 
 /// Validate a session ID contains only safe characters.
 pub fn validate_session_id(id: &str) -> Result<(), String> {
-    if id.is_empty() || !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if id.is_empty()
+        || !id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(format!("Session ID invalide : {id}"));
     }
     Ok(())
