@@ -25,6 +25,7 @@ fn resolve_claude_path_cached(
 }
 
 /// Candidate paths for the `claude` binary on Unix (macOS, Linux).
+#[cfg(any(not(target_os = "windows"), test))]
 fn unix_claude_candidates(home: &str) -> Vec<String> {
     vec![
         format!("{home}/.local/bin/claude"),

@@ -1,10 +1,11 @@
+#[cfg(not(target_os = "windows"))]
 use crate::pty::home_dir;
 
 #[tauri::command]
 pub fn has_statusline() -> bool {
     #[cfg(target_os = "windows")]
     {
-        return true;
+        true
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -23,7 +24,7 @@ pub fn has_statusline() -> bool {
 pub fn create_statusline() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(target_os = "windows"))]
