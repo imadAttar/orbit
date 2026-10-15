@@ -63,7 +63,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
   const unlistenRef = useRef<(() => void) | null>(null);
 
   // --- Sub-hooks (self-contained lifecycle) ---
-  useScrollback(termRef, serializeRef, sessionId, spawned);
+  const saveScrollbackRef = useScrollback(termRef, serializeRef, sessionId, spawned);
 
   // --- Initialize terminal + spawn PTY ---
   useEffect(() => {
@@ -142,9 +142,26 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
 
     let cancelled = false;
     const sid = sessionId;
+    const generationId = crypto.randomUUID();
+    let processExited = false;
+    let exitUnlisten: (() => void) | null = null;
     let lastCostUpdate = 0;
-    let promptCount = 0;
-    const sessionStartTime = Date.now();
+    const telemetryType = isTerminalSession ? "terminal" : "agent";
+    let spawnedAt: number | null = null;
+    let resumeAttempted = false;
+    let resumeConfirmed = false;
+    let errorCode = "listener_failed";
+    let localUnlisten: (() => void) | null = null;
+    let stateUnlisten: (() => void) | null = null;
+    let activityStart: number | null = null;
+    const endActivity = (outcome: "idle" | "waiting" | "interrupted") => {
+      if (activityStart === null) return;
+      trackEvent("agent_activity_ended", {
+        sessionType: "agent", signal: "session_hook", outcome,
+        durationMs: Math.max(0, performance.now() - activityStart),
+      });
+      activityStart = null;
+    };
 
     (async () => {
       try {
@@ -156,10 +173,11 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             const saved = await scrollback.load(sid);
             if (saved) term.write(saved);
           } catch (err) { import("../../../lib/logger").then(({ logger }) => logger.warn("pty", `scrollback restore failed: ${err}`)); }
-        } else {
+        } else if (restoreChoice === "fresh") {
           scrollback.clear(sid);
         }
 
+        if (cancelled) return;
         const dims = fit.proposeDimensions();
         const cols = dims?.cols ?? 80;
         const rows = dims?.rows ?? 24;
@@ -177,13 +195,13 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         }
 
         // Register listener BEFORE spawn — captures all output including early bytes.
-        // spawnComplete flag ignores stale events from previous PTY (Rust kills it in spawn_pty).
-        let spawnComplete = false;
-        const unlisten = await listen<{ session_id: string; data: string }>(
+        // Generation IDs reject stale output without dropping the first bytes.
+        const unlisten = await listen<{ session_id: string; generation_id?: string; data: string }>(
           "pty-output",
           (payload) => {
-            if (cancelled || !spawnComplete) return;
+            if (cancelled || processExited) return;
             if (payload.session_id !== sid) return;
+            if (payload.generation_id !== undefined && payload.generation_id !== generationId) return;
 
             term.write(payload.data);
 
@@ -200,7 +218,26 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             }
           }
         );
+        if (cancelled) { unlisten(); return; }
+        localUnlisten = unlisten;
         unlistenRef.current = unlisten;
+        const stopListening = await listen<{ session_id: string; generation_id?: string; exit_code: number | null }>("pty-exit", (payload) => {
+          if (cancelled || payload.session_id !== sid || (payload.generation_id !== undefined && payload.generation_id !== generationId)) return;
+          processExited = true;
+          spawnedRef.current = false;
+          endActivity("interrupted");
+          onSpawned(false);
+          if (payload.exit_code !== 0) {
+            useStore.getState().setSessionRuntimeStatus(sid, "failed", resumeAttempted ? "resume" : "spawn");
+            if (resumeAttempted) trackEvent("session_resume_failed", { sessionType: telemetryType, errorCode: "process_exited" });
+          } else {
+            useStore.getState().setSessionRuntimeStatus(sid, "exited");
+          }
+        });
+        if (cancelled) { stopListening(); return; }
+        exitUnlisten = stopListening;
+        errorCode = "spawn_failed";
+        trackEvent("pty_spawn_attempted", { sessionType: telemetryType });
 
         // Spawn PTY — Rust auto-kills previous for same session_id
         if (isTerminalSession) {
@@ -210,6 +247,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             cols,
             rows,
             shellOnly: true,
+            generationId,
           });
         } else {
           const isResume = shouldResumeSession && !!claudeSessionId;
@@ -217,6 +255,8 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             ? claudeSessionId!
             : crypto.randomUUID();
 
+          resumeAttempted = isResume;
+          if (isResume) trackEvent("session_resume_attempted", { sessionType: telemetryType });
           await pty.spawn({
             sessionId: sid,
             projectDir,
@@ -226,59 +266,90 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             resumeMode: isResume,
             sessionName: sessionName || null,
             dangerousMode: modeChoice === "yolo",
+            generationId,
           });
 
+          if (cancelled) { await pty.kill(sid, generationId); return; }
           if (!isResume) {
             useStore.getState().setClaudeSessionId(sid, effectiveClaudeId);
           }
           useStore.getState().setDangerousMode(sid, modeChoice === "yolo");
         }
 
-        // Now accept events from the new PTY
-        spawnComplete = true;
-        spawnedRef.current = true;
-        onSpawned(true);
-        trackEvent("pty_spawned", { restore: shouldResumeSession ? 1 : 0 });
+        // These events confirm spawn_pty resolved, NOT Claude's acceptance of
+        // the conversation or a successful business task (no reliable handshake).
+        if (cancelled) { await pty.kill(sid, generationId); return; }
+        spawnedAt = performance.now();
+        spawnedRef.current = !processExited;
+        if (!processExited) {
+          fit.fit();
+          const currentDims = fit.proposeDimensions();
+          if (currentDims) pty.resize(sid, currentDims.cols, currentDims.rows).catch(() => {});
+          onSpawned(true);
+          useStore.getState().setSessionRuntimeStatus(sid, "running");
+        }
+        trackEvent("pty_spawned", { restore: resumeAttempted ? 1 : 0, sessionType: telemetryType });
+        if (resumeAttempted && !processExited) trackEvent("session_resume_launched", { sessionType: telemetryType });
 
-        // Forward xterm input to PTY
-        let lastPromptTrack = 0;
+        // Only structured session hooks can establish an observed activity
+        // interval. PTY text/Enter/working->idle cannot prove business success.
+        // No initial-state guess: an unmatched idle is deliberately ignored.
+        if (!isTerminalSession) {
+          void listen<string>("session-state-changed", (raw) => {
+            if (cancelled) return;
+            try {
+              const data = JSON.parse(raw);
+              const current = useStore.getState().projects.flatMap(p => p.sessions).find(s => s.id === sid);
+              if (!current?.claudeSessionId || data.session_id !== current.claudeSessionId) return;
+              if (resumeAttempted && !resumeConfirmed && data.state === "working") {
+                resumeConfirmed = true;
+                trackEvent("session_resume_succeeded", { sessionType: telemetryType });
+              }
+              if (data.state === "working" && activityStart === null) {
+                activityStart = performance.now();
+                trackEvent("agent_activity_started", { sessionType: "agent", signal: "session_hook" });
+              } else if (data.state === "idle" || data.state === "waiting") {
+                endActivity(data.state);
+              }
+            } catch { /* malformed hook: never inspect or emit raw data */ }
+          }).then(fn => { if (cancelled) fn(); else stateUnlisten = fn; }).catch(() => {});
+        }
+
+        // Input is used locally for conversation/title bookkeeping only. Enter
+        // is not proof of an agent prompt: it may be vim, permission UI, etc.
         let inputBuffer = "";
         let titleGenerated = false;
+        let pasting = false;
         term.onData((data) => {
+          if (cancelled || processExited) return;
           pty.write(sid, data).catch(() => {});
-          // Track Enter key — throttle to max 1 event per 2s to avoid noise from vim/less/confirmations
-          if (data === "\r" || data === "\n") {
-            const now = Date.now();
-            if (now - lastPromptTrack > 2000) {
-              lastPromptTrack = now;
-              promptCount++;
-              trackEvent("prompt_sent");
-            }
-            // Mark conversation as started on meaningful input — gates --resume in later spawns
-            // (e.g. mode toggle) so we don't hit "No conversation found" on fresh sessions.
-            if (!isTerminalSession && inputBuffer.trim().length > 0) {
-              useStore.getState().markConversationStarted(sid);
-            }
-            // Auto-title: generate on first meaningful prompt
-            if (!titleGenerated && !isTerminalSession && inputBuffer.trim().length > 3) {
+          const submit = () => {
+            const prompt = inputBuffer.trim();
+            if (!isTerminalSession && prompt.length > 0) useStore.getState().markConversationStarted(sid);
+            if (!titleGenerated && !isTerminalSession && prompt.length > 3 && (sessionName === "main" || /^session-\d+$/.test(sessionName ?? ""))) {
               titleGenerated = true;
-              const prompt = inputBuffer.trim();
               claude.generateTitle(prompt).then((title) => {
-                useStore.getState().renameSession(sid, title);
+                const current = useStore.getState().projects.flatMap((p) => p.sessions).find((s) => s.id === sid);
+                if (!cancelled && current?.name === sessionName) useStore.getState().renameSession(sid, title);
               }).catch(() => {});
             }
             inputBuffer = "";
-          } else if (!titleGenerated) {
-            // Accumulate typed characters (ignore control chars)
-            if (data.length === 1 && data.charCodeAt(0) >= 32) {
-              inputBuffer += data;
-            } else if (data === "\x7f") {
-              inputBuffer = inputBuffer.slice(0, -1);
-            }
+          };
+          // xterm delivers paste as multi-character data, optionally bracketed.
+          // Newlines within paste are text, not a separate submit confirmation.
+          const chunks = data.split(/(\x1b\[200~|\x1b\[201~)/);
+          for (const chunk of chunks) {
+            if (chunk === "\x1b[200~") { pasting = true; continue; }
+            if (chunk === "\x1b[201~") { pasting = false; continue; }
+            if (!pasting && (chunk === "\r" || chunk === "\n")) { submit(); continue; }
+            if (chunk === "\x03" || chunk === "\x15") { inputBuffer = ""; continue; }
+            if (chunk === "\x7f" || chunk === "\b") { inputBuffer = inputBuffer.slice(0, -1); continue; }
+            const text = stripAnsi(chunk).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+            inputBuffer = (inputBuffer + text).slice(0, 4096);
           }
         });
 
-        term.attachCustomKeyEventHandler(
+        term.attachCustomKeyEventHandler?.(
           createTerminalKeyEventHandler({
             sid,
             term,
@@ -290,46 +361,46 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         );
       } catch (err) {
         // Ensure listener is cleaned up even if spawn failed
-        if (unlistenRef.current) {
-          unlistenRef.current();
-          unlistenRef.current = null;
-        }
+        exitUnlisten?.();
+        exitUnlisten = null;
+        localUnlisten?.();
+        if (unlistenRef.current === localUnlisten) unlistenRef.current = null;
+        localUnlisten = null;
         if (!cancelled) {
+          spawnedRef.current = false;
+          onSpawned(false);
+          useStore.getState().setSessionRuntimeStatus(sid, "failed", resumeAttempted ? "resume" : "spawn");
           const errMsg = err instanceof Error ? err.message : String(err);
           term.write(`\r\n\x1b[31m${t("terminal.error", { message: errMsg })}\x1b[0m\r\n`);
-          trackEvent("pty_error", { error: errMsg.slice(0, 100) });
+          trackEvent("pty_error", { errorCode, sessionType: telemetryType });
+          if (resumeAttempted) trackEvent("session_resume_failed", { sessionType: telemetryType, errorCode });
         }
       }
     })();
 
     return () => {
       cancelled = true;
+      endActivity("interrupted");
+      stateUnlisten?.();
+      exitUnlisten?.();
       spawnedRef.current = false;
       onSpawned(false);
 
-      // Track session engagement metrics on cleanup
-      if (promptCount > 0) {
-        const durationMs = Date.now() - sessionStartTime;
-        const cost = useStore.getState().sessionCosts[sid] ?? 0;
-        trackEvent("session_engagement", {
-          prompts: promptCount,
-          durationMs,
-          durationMin: Math.round(durationMs / 60000),
-          cost,
-          sessionType: isTerminalSession ? "terminal" : "claude",
-        });
-      }
+      // Mounted PTY lifetime is not agent/task duration. Start only after
+      // spawn resolves; use a monotonic clock (wall clock may change).
+      if (spawnedAt !== null) trackEvent("pty_lifetime", {
+        durationMs: Math.max(0, performance.now() - spawnedAt), sessionType: telemetryType,
+      });
 
-      // Unlisten may still be pending (async) — handle both cases
-      if (unlistenRef.current) {
-        unlistenRef.current();
-      }
-      unlistenRef.current = null;
+      localUnlisten?.();
+      if (unlistenRef.current === localUnlisten) unlistenRef.current = null;
+      localUnlisten = null;
 
       // Do NOT kill the PTY here — Rust spawn_pty auto-kills previous session.
       // PTY is also killed by store.removeSession when user explicitly deletes.
 
       // Guard: term may already be disposed if React unmounts during cascade
+      saveScrollbackRef.current();
       try { term.dispose(); } catch { /* already disposed */ }
       termRef.current = null;
       fitRef.current = null;
@@ -381,6 +452,10 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
     if (!termRef.current) return;
     termRef.current.options.fontSize = fontSize;
     fitRef.current?.fit();
+    const dims = fitRef.current?.proposeDimensions();
+    if (dims && spawnedRef.current) {
+      pty.resize(sessionId, dims.cols, dims.rows).catch(() => {});
+    }
   }, [fontSize]);
 
   return { termRef, fitRef, searchRef, serializeRef, spawnedRef };

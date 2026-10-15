@@ -84,6 +84,40 @@ describe("createTerminalKeyEventHandler — prompt navigation", () => {
     expect(handler(makeEvent({ key: "c", ctrlKey: true }))).toBe(true);
     expect(jumpPrompt).not.toHaveBeenCalled();
   });
+
+  it("blocks clean Cmd/Ctrl+T from reaching the PTY without stopping propagation", () => {
+    const handler = createTerminalKeyEventHandler({
+      sid: "s1",
+      term: term as TerminalKeyHandlerDeps["term"],
+      pty: pty as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt,
+      writeText,
+      readText,
+    });
+
+    for (const e of [
+      makeEvent({ key: "t", ctrlKey: true }),
+      makeEvent({ key: "T", metaKey: true }),
+    ]) {
+      expect(handler(e)).toBe(false);
+      expect(e.preventDefault).toHaveBeenCalled();
+      expect(e.stopPropagation).not.toHaveBeenCalled();
+    }
+  });
+
+  it("lets modified Cmd/Ctrl+T combinations pass through", () => {
+    const handler = createTerminalKeyEventHandler({
+      sid: "s1",
+      term: term as TerminalKeyHandlerDeps["term"],
+      pty: pty as TerminalKeyHandlerDeps["pty"],
+      jumpPrompt,
+      writeText,
+      readText,
+    });
+
+    expect(handler(makeEvent({ key: "t", ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(handler(makeEvent({ key: "t", metaKey: true, altKey: true }))).toBe(true);
+  });
 });
 
 describe("createTerminalKeyEventHandler — Windows Ctrl+C copy", () => {

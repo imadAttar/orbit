@@ -152,6 +152,55 @@ describe("App keyboard shortcuts", () => {
     });
   });
 
+  // --- Cmd+T: add plain terminal session ---
+
+  describe("Cmd+T", () => {
+    it("should add and activate a plain terminal session", () => {
+      const before = getState().projects[0].sessions.length;
+      fire("t", { metaKey: true });
+      const project = getState().projects[0];
+      const created = project.sessions[project.sessions.length - 1];
+      expect(project.sessions).toHaveLength(before + 1);
+      expect(created.type).toBe("terminal");
+      expect(getState().activeSid).toBe(created.id);
+    });
+
+    it("supports Ctrl+T on Windows and Linux", () => {
+      const before = getState().projects[0].sessions.length;
+      fire("t", { ctrlKey: true });
+      const project = getState().projects[0];
+      expect(project.sessions).toHaveLength(before + 1);
+      expect(project.sessions[project.sessions.length - 1].type).toBe("terminal");
+    });
+
+    it("does not hijack modified Cmd/Ctrl+T combinations", () => {
+      const before = getState().projects[0].sessions.length;
+      fire("t", { metaKey: true, shiftKey: true });
+      fire("t", { ctrlKey: true, altKey: true });
+      expect(getState().projects[0].sessions).toHaveLength(before);
+    });
+  });
+
+  it("skips archives and matches grouped sidebar numbering", () => {
+    const project = getState().projects[0];
+    const [a, b, c] = project.sessions;
+    useStore.setState({ projects: [{ ...project, sessions: [{ ...a, archivedAt: 1 }, { ...b, type: "terminal" }, c] }] });
+    fire("1", { ctrlKey: true });
+    expect(getState().activeSid).toBe(c.id);
+    fire("Tab", { ctrlKey: true });
+    expect(getState().activeSid).toBe(b.id);
+    fire("Tab", { ctrlKey: true });
+    expect(getState().activeSid).toBe(c.id);
+  });
+
+  it("opens new project with the real uppercase Shift+N browser key", () => {
+    const spy = vi.fn();
+    window.addEventListener("test:showNewProject", spy);
+    fire("N", { metaKey: true, shiftKey: true });
+    expect(spy).toHaveBeenCalledOnce();
+    window.removeEventListener("test:showNewProject", spy);
+  });
+
   // --- Cmd+W: confirm delete session ---
 
   describe("Cmd+W", () => {

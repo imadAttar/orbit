@@ -31,6 +31,19 @@ export function createTerminalKeyEventHandler(
   const { sid, term, pty, jumpPrompt, writeText, readText } = deps;
 
   return (e: KeyboardEvent): boolean => {
+    // The application-level handler opens a terminal session. Block xterm from
+    // also forwarding Ctrl+T (\x14) to the active PTY, but keep propagation so
+    // the window listener can create the session.
+    if (
+      (e.metaKey || e.ctrlKey) &&
+      !e.shiftKey &&
+      !e.altKey &&
+      e.key.toLowerCase() === "t"
+    ) {
+      e.preventDefault();
+      return false;
+    }
+
     // Prompt navigation: Cmd/Ctrl + ArrowUp/ArrowDown
     if ((e.metaKey || e.ctrlKey) && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();

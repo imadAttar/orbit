@@ -1,4 +1,6 @@
-use crate::validation::{validate_dir, validate_filename, validate_path_within, validate_session_id};
+use crate::validation::{
+    validate_dir, validate_filename, validate_path_within, validate_session_id,
+};
 use std::process::Command;
 
 /// Decode a standard base64 string to bytes.
@@ -59,7 +61,11 @@ pub fn open_terminal(terminal: String, dir: String) -> Result<(), String> {
         }
         "powershell" => {
             Command::new("powershell")
-                .args(["-NoExit", "-Command", &format!("Set-Location -LiteralPath '{}'", dir.replace('\'', "''"))])
+                .args([
+                    "-NoExit",
+                    "-Command",
+                    &format!("Set-Location -LiteralPath '{}'", dir.replace('\'', "''")),
+                ])
                 .spawn()
                 .map_err(|e| format!("Failed to open PowerShell: {e}"))?;
         }
@@ -106,7 +112,12 @@ pub fn open_terminal(terminal: String, dir: String) -> Result<(), String> {
 
 /// Open a file in the user's preferred editor.
 #[tauri::command]
-pub fn open_in_editor(editor: String, path: String, line: u32, project_dir: String) -> Result<(), String> {
+pub fn open_in_editor(
+    editor: String,
+    path: String,
+    line: u32,
+    project_dir: String,
+) -> Result<(), String> {
     validate_dir(&project_dir)?;
 
     // Resolve and validate path stays within project (prevents path traversal)
@@ -171,8 +182,15 @@ pub fn open_in_editor(editor: String, path: String, line: u32, project_dir: Stri
             #[cfg(target_os = "macos")]
             {
                 // Use a temporary script to avoid AppleScript injection entirely
-                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
-                let tmp = std::env::temp_dir().join(format!("orbit-nvim-{}-{}.sh", std::process::id(), ts));
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis();
+                let tmp = std::env::temp_dir().join(format!(
+                    "orbit-nvim-{}-{}.sh",
+                    std::process::id(),
+                    ts
+                ));
                 let mut args_line = String::from("exec nvim");
                 if line > 0 {
                     args_line.push_str(&format!(" +{line_str}"));
@@ -183,7 +201,8 @@ pub fn open_in_editor(editor: String, path: String, line: u32, project_dir: Stri
                     .map_err(|e| format!("Failed to write temp script: {e}"))?;
                 std::fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755))
                     .map_err(|e| format!("Failed to set permissions: {e}"))?;
-                let tmp_str = tmp.to_str()
+                let tmp_str = tmp
+                    .to_str()
                     .ok_or_else(|| "Temp script path is not valid UTF-8".to_string())?;
                 Command::new("open")
                     .args(["-a", "Terminal", tmp_str, "--args", &full_path])
@@ -204,11 +223,7 @@ pub fn open_in_editor(editor: String, path: String, line: u32, project_dir: Stri
                 Command::new("x-terminal-emulator")
                     .args(&args)
                     .spawn()
-                    .or_else(|_| {
-                        Command::new("xterm")
-                            .args(&args)
-                            .spawn()
-                    })
+                    .or_else(|_| Command::new("xterm").args(&args).spawn())
                     .map_err(|e| format!("Failed to open Neovim: {e}"))?;
             }
             #[cfg(target_os = "windows")]
@@ -227,7 +242,11 @@ pub fn open_in_editor(editor: String, path: String, line: u32, project_dir: Stri
             }
         }
         "emacs" => {
-            let line_arg = if line > 0 { format!("+{line_str}") } else { String::new() };
+            let line_arg = if line > 0 {
+                format!("+{line_str}")
+            } else {
+                String::new()
+            };
             let mut args: Vec<&str> = Vec::new();
             if line > 0 {
                 args.push(&line_arg);
@@ -242,9 +261,7 @@ pub fn open_in_editor(editor: String, path: String, line: u32, project_dir: Stri
                         ec_args.push(&line_arg);
                     }
                     ec_args.push(&full_path);
-                    Command::new("emacsclient")
-                        .args(&ec_args)
-                        .spawn()
+                    Command::new("emacsclient").args(&ec_args).spawn()
                 })
                 .map_err(|e| format!("Failed to open Emacs: {e}"))?;
         }
@@ -284,9 +301,15 @@ const MAX_SCROLLBACK_BYTES: usize = 1_048_576;
 pub fn save_scrollback(session_id: String, data: String) -> Result<(), String> {
     validate_session_id(&session_id)?;
     let home = super::pty::home_dir();
-    let dir = std::path::Path::new(&home).join(".claude-ide").join("scrollback");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create scrollback directory {}: {e}", dir.display()))?;
+    let dir = std::path::Path::new(&home)
+        .join(".claude-ide")
+        .join("scrollback");
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        format!(
+            "Failed to create scrollback directory {}: {e}",
+            dir.display()
+        )
+    })?;
     let path = dir.join(format!("{session_id}.txt"));
     // Truncate to last MAX_SCROLLBACK_BYTES to avoid filling disk
     let truncated = if data.len() > MAX_SCROLLBACK_BYTES {
@@ -297,8 +320,7 @@ pub fn save_scrollback(session_id: String, data: String) -> Result<(), String> {
     } else {
         &data
     };
-    std::fs::write(&path, truncated)
-        .map_err(|e| format!("Failed to save scrollback: {e}"))
+    std::fs::write(&path, truncated).map_err(|e| format!("Failed to save scrollback: {e}"))
 }
 
 /// Load scrollback data for a session.
@@ -318,7 +340,6 @@ pub fn load_scrollback(session_id: String) -> Result<Option<String>, String> {
         .map_err(|e| format!("Failed to load scrollback: {e}"))
 }
 
-
 /// Send a desktop notification when Claude finishes.
 #[tauri::command]
 pub fn notify_done(session_name: String) -> Result<(), String> {
@@ -326,7 +347,11 @@ pub fn notify_done(session_name: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         // Strip any control characters from session name
-        let safe_title: String = session_name.chars().filter(|c| !c.is_control()).take(100).collect();
+        let safe_title: String = session_name
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(100)
+            .collect();
         Command::new("osascript")
             .args([
                 "-e",
@@ -354,7 +379,11 @@ pub fn notify_done(session_name: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         // Pass title as a parameter to avoid PowerShell injection
-        let safe_title: String = session_name.chars().filter(|c| !c.is_control()).take(100).collect();
+        let safe_title: String = session_name
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(100)
+            .collect();
         Command::new("powershell")
             .args([
                 "-Command",
@@ -381,7 +410,9 @@ pub fn save_temp_image(data: String, extension: String) -> Result<String, String
         _ => "png",
     };
     let home = super::pty::home_dir();
-    let dir = std::path::Path::new(&home).join(".orbit").join("tmp-images");
+    let dir = std::path::Path::new(&home)
+        .join(".orbit")
+        .join("tmp-images");
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Impossible de creer le repertoire temp: {e}"))?;
     let ts = std::time::SystemTime::now()
@@ -397,8 +428,7 @@ pub fn save_temp_image(data: String, extension: String) -> Result<String, String
     let filename = format!("paste-{ts}-{pid}-{nanos}.{ext}");
     let path = dir.join(&filename);
     let bytes = base64_decode(&data)?;
-    std::fs::write(&path, &bytes)
-        .map_err(|e| format!("Impossible d'ecrire l'image: {e}"))?;
+    std::fs::write(&path, &bytes).map_err(|e| format!("Impossible d'ecrire l'image: {e}"))?;
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -484,7 +514,10 @@ pub fn write_orbit_file(name: String, data: String) -> Result<(), String> {
 #[tauri::command]
 pub fn collect_crash_report(error_message: String) -> Result<String, String> {
     let home = super::pty::home_dir();
-    let log_path = std::path::Path::new(&home).join(".orbit").join("logs").join("orbit.log");
+    let log_path = std::path::Path::new(&home)
+        .join(".orbit")
+        .join("logs")
+        .join("orbit.log");
 
     // Sanitize error message
     let safe_error: String = error_message
@@ -505,7 +538,11 @@ pub fn collect_crash_report(error_message: String) -> Result<String, String> {
         let mut buf = String::new();
         let _ = file.read_to_string(&mut buf);
         let lines: Vec<&str> = buf.lines().collect();
-        let start = if lines.len() > 100 { lines.len() - 100 } else { 0 };
+        let start = if lines.len() > 100 {
+            lines.len() - 100
+        } else {
+            0
+        };
         lines[start..].join("\n")
     } else {
         "(logs unavailable)".to_string()

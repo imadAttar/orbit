@@ -21,9 +21,17 @@ interface PersistedData {
   activePid: string;
   activeSid: string;
   settings: Settings;
+  projectSessions?: Record<string, string>; // optional for legacy data
 }
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function isPersistedData(data: unknown): data is PersistedData {
+  if (!data || typeof data !== "object" || !("projects" in data)) return false;
+  return Array.isArray(data.projects) && data.projects.every((p) => p && typeof p.id === "string"
+    && Array.isArray(p.sessions) && p.sessions.every((s: unknown) => s && typeof s === "object"
+      && "id" in s && typeof s.id === "string"));
+}
 
 async function getTauriFs() {
   try {
@@ -38,7 +46,7 @@ export async function loadData(): Promise<PersistedData | null> {
   try {
     const raw = await orbit.readFile(DATA_FILE);
     const data = JSON.parse(raw);
-    if (data?.projects?.length && data?.activePid) return data as PersistedData;
+    if (isPersistedData(data)) return data;
   } catch { /* not found via Rust */ }
 
   // Fallback: Tauri FS plugin
@@ -49,7 +57,7 @@ export async function loadData(): Promise<PersistedData | null> {
         baseDir: fs.BaseDirectory.Home,
       });
       const data = JSON.parse(raw);
-      if (data?.projects?.length && data?.activePid) return data as PersistedData;
+      if (isPersistedData(data)) return data;
     }
   } catch { /* not found via plugin */ }
 
@@ -61,7 +69,7 @@ export async function loadData(): Promise<PersistedData | null> {
         baseDir: fs.BaseDirectory.Home,
       });
       const data = JSON.parse(raw);
-      if (data?.projects?.length && data?.activePid) {
+      if (isPersistedData(data)) {
         await orbit.writeFile(DATA_FILE, raw);
         logger.info("persistence", "Migrated data from legacy directory");
         return data as PersistedData;

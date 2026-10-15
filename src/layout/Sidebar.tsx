@@ -4,6 +4,7 @@ import { useStore, selectActiveProject } from "../core/store";
 import { trackEvent } from "../lib/analytics";
 import { useT } from "../i18n/i18n";
 import InlineRename from "../shared/InlineRename";
+import ActivityPanel from "../features/activity/ActivityPanel";
 
 interface Props {
   onContextMenu: (sid: string, x: number, y: number) => void;
@@ -11,6 +12,7 @@ interface Props {
 
 export default function Sidebar({ onContextMenu }: Props) {
   const t = useT();
+  const [view, setView] = useState<"sessions" | "activity" | "archives">("sessions");
 
   const activeProject = useStore(selectActiveProject);
   const activeSid = useStore((s) => s.activeSid);
@@ -50,8 +52,8 @@ export default function Sidebar({ onContextMenu }: Props) {
 
   const sidebarStyle = useMemo(() => ({ width: sidebarWidth }), [sidebarWidth]);
 
-  const claudeSessions = useMemo(() => activeProject?.sessions.filter((s) => s.type !== "terminal") ?? [], [activeProject?.sessions]);
-  const terminalSessions = useMemo(() => activeProject?.sessions.filter((s) => s.type === "terminal") ?? [], [activeProject?.sessions]);
+  const claudeSessions = useMemo(() => activeProject?.sessions.filter((s) => s.archivedAt === undefined && s.type !== "terminal") ?? [], [activeProject?.sessions]);
+  const terminalSessions = useMemo(() => activeProject?.sessions.filter((s) => s.archivedAt === undefined && s.type === "terminal") ?? [], [activeProject?.sessions]);
   const canDelete = true;
 
   const handleSessionClick = useCallback((sid: string) => {
@@ -73,6 +75,12 @@ export default function Sidebar({ onContextMenu }: Props) {
 
   return (
     <div className="sidebar" style={sidebarStyle} data-testid="sidebar">
+      <div className="sidebar__views" role="group" aria-label={t("sidebar.views")}>
+        {(["sessions", "activity", "archives"] as const).map((item) => <button key={item} type="button" aria-pressed={view === item} onClick={() => setView(item)}>
+          {t(item === "sessions" ? "sidebar.sessions" : item === "activity" ? "activity.title" : "activity.archives")}
+        </button>)}
+      </div>
+      {view !== "sessions" ? <ActivityPanel key={view} archives={view === "archives"} /> : <>
       <div className="sidebar__group">
         <div className="sidebar__group-header">
           <span>{t("session.sessions")}</span>
@@ -137,6 +145,7 @@ export default function Sidebar({ onContextMenu }: Props) {
           <button className="sidebar__group-add sidebar__group-add--terminal" onClick={() => { addSession(undefined, "terminal"); trackEvent("terminal_session_created"); }} aria-label={t("session.addTerminalSession")}>+</button>
         </div>
       )}
+      </>}
     </div>
   );
 }

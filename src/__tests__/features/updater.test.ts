@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const mockCheck = vi.fn();
 const mockRelaunch = vi.fn();
@@ -29,10 +29,34 @@ import {
   getUpdateStatus,
   triggerManualUpdate,
   installAndRestart,
+  initUpdater,
 } from "../../features/updater";
 import type { UpdateStatus } from "../../features/updater";
 
 describe("updater", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it("does not schedule automatic network checks in development", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("DEV", true);
+    initUpdater();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("keeps the delayed automatic check in production", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("DEV", false);
+    initUpdater();
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(mockCheck).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mockCheck).toHaveBeenCalledOnce();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset internal state by checking for no update

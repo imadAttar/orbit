@@ -27,40 +27,38 @@ pub fn setup_watcher(app: tauri::AppHandle) -> Result<(), String> {
     if let Err(e) = std::thread::Builder::new()
         .name("orbit-watcher".into())
         .spawn(move || {
-        // Keep watcher alive
-        let _watcher = watcher;
+            // Keep watcher alive
+            let _watcher = watcher;
 
-        for event in rx {
-            let Ok(event) = event else { continue };
+            for event in rx {
+                let Ok(event) = event else { continue };
 
-            // Only react to Create/Modify events
-            let is_relevant = matches!(
-                event.kind,
-                EventKind::Create(_) | EventKind::Modify(_)
-            );
-            if !is_relevant {
-                continue;
-            }
+                // Only react to Create/Modify events
+                let is_relevant = matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_));
+                if !is_relevant {
+                    continue;
+                }
 
-            for path in &event.paths {
-                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                for path in &event.paths {
+                    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-                match filename {
-                    f if f.starts_with("session-") && f.ends_with(".json") => {
-                        if let Ok(raw) = fs::read_to_string(path) {
-                            let _ = app_handle.emit("session-state-changed", raw);
+                    match filename {
+                        f if is_session_state_file(f) => {
+                            if let Ok(raw) = fs::read_to_string(path) {
+                                let _ = app_handle.emit("session-state-changed", raw);
+                            }
                         }
-                    }
-                    "statusline-latest.json" => {
-                        if let Ok(raw) = fs::read_to_string(path) {
-                            let _ = app_handle.emit("statusline-updated", raw);
+                        "statusline-latest.json" => {
+                            if let Ok(raw) = fs::read_to_string(path) {
+                                let _ = app_handle.emit("statusline-updated", raw);
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
-        }
-    }) {
+        })
+    {
         tracing::error!("Failed to spawn orbit watcher thread: {e}");
         return Err(format!("Failed to spawn watcher thread: {e}"));
     }
@@ -69,6 +67,12 @@ pub fn setup_watcher(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 // --- Helpers ---
+
+// Atomic hook publication renames a unique .tmp file to session-*.json.
+// Never read a temporary file, including the source of a rename event.
+fn is_session_state_file(filename: &str) -> bool {
+    filename.starts_with("session-") && filename.ends_with(".json")
+}
 
 fn home_dir() -> Option<PathBuf> {
     #[cfg(not(target_os = "windows"))]
@@ -81,5 +85,24 @@ fn home_dir() -> Option<PathBuf> {
             .or_else(|_| std::env::var("HOME"))
             .ok()
             .map(PathBuf::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_session_state_file;
+
+    #[test]
+    fn session_state_filter_ignores_atomic_write_temporary_files() {
+        assert!(is_session_state_file("session-abc.json"));
+        for filename in [
+            "session-abc-unique.tmp",
+            "session-abc.json.tmp",
+            "statusline-latest.json",
+            "session-abc",
+            "",
+        ] {
+            assert!(!is_session_state_file(filename), "{filename}");
+        }
     }
 }

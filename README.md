@@ -65,12 +65,12 @@ The hooks write state to `~/.orbit/session-state.json`. Orbit watches this file 
 
 ## Development
 
-Requires Node.js 20+ and Rust 1.75+.
+Requires Node.js 22.12+ and Rust 1.75+.
 
 ```bash
 npm install            # Install dependencies
 npm run tauri dev      # Launch app in dev mode
-npm test               # Run tests (171 tests)
+npm test               # Run tests
 npx tsc --noEmit       # Typecheck
 npm run tauri build    # Production build for current platform
 ```

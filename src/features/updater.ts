@@ -124,6 +124,9 @@ export async function triggerManualUpdate(): Promise<void> {
 
 // Check on startup after a short delay
 export function initUpdater(): void {
+  // Local development must not query release infrastructure or install updates.
+  // Explicit manual checks remain available; production startup is unchanged.
+  if (import.meta.env.DEV) return;
   setTimeout(() => {
     checkForUpdates().catch(() => {});
   }, 5000);

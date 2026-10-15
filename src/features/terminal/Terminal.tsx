@@ -59,6 +59,7 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
   const t = useT();
   const [ts, dp] = useReducer(termReducer, INITIAL_TERM_STATE);
   const rememberRef = useRef<HTMLInputElement>(null);
+  const runtime = useStore((s) => s.projects.flatMap((p) => p.sessions).find((ss) => ss.id === sessionId));
 
   const isVisible = active || visible;
 
@@ -130,6 +131,16 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
 
   return (
     <div className={`terminal-wrapper ${isVisible ? "" : "terminal-wrapper--hidden"}`}>
+      {(runtime?.runtimeStatus === "failed" || runtime?.runtimeStatus === "exited") && (
+        <div className="session-restore" role="status">
+          <span className="session-restore__text">{t(runtime.runtimeStatus === "exited" ? "activity.exited" : runtime.failureReason === "resume" ? "activity.resumeFailed" : "activity.spawnFailed")}</span>
+          <button className="session-restore__btn" onClick={() => {
+            dp({ type: "setRestore", value: "continue" });
+            dp({ type: "reset" });
+          }}>{t("common.retry")}</button>
+          {!isTerminalSession && <button className="session-restore__btn" onClick={() => useStore.getState().addSession()}>{t("session.freshStart")}</button>}
+        </div>
+      )}
       {/* Session restore prompt */}
       {ts.restoreChoice === "ask" && (
         <div className="session-restore">
@@ -262,10 +273,8 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
               dp({ type: "setRestore", value: "fresh" });
             }
             useStore.getState().setDangerousMode(sessionId, next === "yolo");
-            if (ptyResult.termRef.current) {
-              ptyResult.termRef.current.clear();
-              ptyResult.termRef.current.reset();
-            }
+            // The replacement starts with a clean terminal. Keep the outgoing
+            // buffer intact until its owner saves it before disposal.
             // Previous PTY is killed by Rust spawn_pty on respawn.
             ptyResult.spawnedRef.current = false;
             trackEvent("mode_toggle", { mode: next });

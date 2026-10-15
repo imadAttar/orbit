@@ -22,7 +22,7 @@ class ErrorBoundaryInner extends Component<Props, State> {
 
   componentDidCatch(error: Error, _info: React.ErrorInfo) {
     import("../lib/logger").then(({ logger }) => logger.error("error-boundary", `${error?.message ?? error}`));
-    import("../lib/analytics").then(({ trackEvent }) => trackEvent("error_boundary", { error: (error?.message ?? "unknown").slice(0, 200) }));
+    import("../lib/analytics").then(({ trackEvent }) => trackEvent("error_boundary", { errorCode: "render_failed" }));
   }
 
   handleSendReport = async () => {

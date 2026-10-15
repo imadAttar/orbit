@@ -72,9 +72,17 @@ export default function App() {
   });
   const resizingRef = useRef(false);
   const mountedSidsRef = useRef(new Set<string>());
+  const onboardingTracked = useRef(false);
 
   useAppInit(dispatch);
   useThemeSync();
+
+  useEffect(() => {
+    if (loaded && (!activeProject || !activeSession) && !onboardingTracked.current) {
+      onboardingTracked.current = true;
+      trackEvent("onboarding_shown");
+    }
+  }, [loaded, activeProject, activeSession]);
 
   if (activePid !== ui.prevActivePid) dispatch({ type: "resetForProject", activePid });
 
@@ -116,7 +124,7 @@ export default function App() {
   if (!loaded) return <div className="app" style={centeredAppStyle}><span style={dimTextStyle}>{t("app.loading")}</span></div>;
 
   if (!activeProject || !activeSession) {
-    if (!ui.prevActivePid) trackEvent("onboarding_shown");
+
     return (
       <div className="app" style={centeredAppStyle}>
         <div className="onboarding">
@@ -133,7 +141,7 @@ export default function App() {
 
   // Track which sessions have been visited — keep them mounted across all projects
   // Clean up only truly deleted sessions (not in ANY project)
-  const allSids = new Set(projects.flatMap((p) => p.sessions.map((s) => s.id)));
+  const allSids = new Set(projects.flatMap((p) => p.sessions.filter((s) => s.archivedAt === undefined).map((s) => s.id)));
   for (const sid of mountedSidsRef.current) {
     if (!allSids.has(sid)) mountedSidsRef.current.delete(sid);
   }
@@ -158,7 +166,7 @@ export default function App() {
             <div className="terminal-area__body">
               <div className="terminal-area__terminals">
                 {projects.flatMap((p) =>
-                    p.sessions.filter((s) => mountedSids.has(s.id)).map((s) => (
+                    p.sessions.filter((s) => s.archivedAt === undefined && mountedSids.has(s.id)).map((s) => (
                       <TerminalView key={s.id} sessionId={s.id} projectDir={p.dir}
                         active={s.id === activeSid}
                         visible={s.id === activeSid}
