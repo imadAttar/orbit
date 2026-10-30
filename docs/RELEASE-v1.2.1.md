@@ -8,13 +8,14 @@ Le tag v1.2.0 a été conservé après un échec de vérification Windows ; aucu
 - Aperçu web, Markdown, texte et images à côté du terminal, en lecture seule.
 - Interface Mac plus compacte ; application cohérente des neuf thèmes, y compris pendant l’aperçu des préférences et son annulation.
 - Fiabilité des sauvegardes en développement, signalement des résultats différés et validation des chemins de fichiers renforcés.
+- Correctifs de dépendances Rust utilisées par le Mac : TLS (`rustls`, `rustls-webpki`), extraction TAR et sérialisation (`serde_with`).
 - Détection des mises à jour au lancement, puis toutes les six heures et au retour dans l’app si le délai est écoulé. Les choix de mise à jour automatique sont conservés ; aucun redémarrage forcé.
 
 ## Installation et mises à jour
 
 Télécharger `Orbit_1.2.1_aarch64.dmg`. Cette version concerne les Mac Apple Silicon, pas les Mac Intel.
 
-Le manifeste `latest.json` et le paquet d’update sont signés avec la clé déjà approuvée par les anciennes versions Mac. Une ancienne version détectera cette release lors de ses propres vérifications, généralement au prochain lancement. Les vérifications périodiques améliorées sont actives après installation de la 1.2.1.
+Le manifeste `latest.json` annonce le paquet d’update, dont la signature est vérifiée avec la clé déjà approuvée par les anciennes versions Mac. Le manifeste lui-même n’est pas signé. Une ancienne version détectera cette release lors de ses propres vérifications, généralement au prochain lancement. Les vérifications périodiques améliorées sont actives après installation de la 1.2.1.
 
 Finir les tâches en cours avant de redémarrer ou remplacer l’application. Conserver une sauvegarde de `~/.orbit` et des conversations Claude.
 
