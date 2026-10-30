@@ -3,13 +3,13 @@ import { buildActivity } from "../../core/activity";
 import type { Project } from "../../core/types";
 
 describe("cross-project activity", () => {
-  it("shares supervision priorities for terminated processes and observed children", () => {
+  it("ignores obsolete child data and shares authoritative native parent/process priorities", () => {
     const projects: Project[] = [{ id: "p", name: "P", dir: "/p", sessions: [
       { id: "fail", name: "Failed", runtimeStatus: "failed", claudeSessionId: "f" },
       { id: "parent", name: "Parent", runtimeStatus: "running", claudeSessionId: "c" },
     ] }];
     const rows = buildActivity(projects, { f: "working", c: "idle" }, false, { c: [{ id: "a", label: "Explore", status: "running", updatedAt: 1 }] });
-    expect(rows.map((r) => [r.session.id, r.category])).toEqual([["parent", "working"], ["fail", "failed"]]);
+    expect(rows.map((r) => [r.session.id, r.category])).toEqual([["fail", "failed"], ["parent", "recent"]]);
   });
   it("sorts archives by archive time rather than stale activity, without mutating project sessions", () => {
     const projects: Project[] = [{ id: "a", name: "A", dir: "/a", sessions: [

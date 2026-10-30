@@ -4,16 +4,21 @@ import { useState, type ReactNode } from "react";
 
 const state = vi.hoisted(() => ({
   settings: { theme: "orbit", fontSize: 14, analytics: false, autoUpdate: false, autoNotifications: false, language: "en", defaultMode: "normal" },
-  updateSettings: vi.fn(), addProject: vi.fn(), setStatuslineAsked: vi.fn(),
+  updateSettings: vi.fn(), addProject: vi.fn(),
 }));
 vi.mock("../../core/store", () => ({ useStore: Object.assign((selector: (s: typeof state) => unknown) => selector(state), { getState: () => state }) }));
 vi.mock("../../lib/analytics", () => ({ trackEvent: vi.fn(), setAnalyticsEnabled: vi.fn() }));
-vi.mock("../../core/api", () => ({ claude: { install: vi.fn() }, statusline: { create: vi.fn() } }));
+vi.mock("../../core/api", () => ({ claude: { install: vi.fn() } }));
 vi.mock("../../i18n/i18n", () => ({ useT: () => (key: string) => key }));
 
 import NewProjectModal from "../../modals/NewProjectModal";
 import PreferencesModal from "../../modals/PreferencesModal";
-import { DeleteSessionModal, InstallClaudeModal, StatuslineModal } from "../../modals/AppModals";
+import * as AppModals from "../../modals/AppModals";
+import { DeleteSessionModal, InstallClaudeModal } from "../../modals/AppModals";
+
+it("exposes no custom Claude statusline installer dialog", () => {
+  expect(AppModals).not.toHaveProperty("StatuslineModal");
+});
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -21,7 +26,6 @@ const cases: [string, (close: () => void) => ReactNode][] = [
   ["new project", (close) => <NewProjectModal onClose={close} />],
   ["preferences", (close) => <PreferencesModal onClose={close} />],
   ["delete session", (close) => <DeleteSessionModal sessionId="missing" sessions={[]} onConfirm={vi.fn()} onCancel={close} />],
-  ["statusline", (close) => <StatuslineModal onClose={close} />],
   ["install prompt", (close) => <InstallClaudeModal onClose={close} />],
 ];
 

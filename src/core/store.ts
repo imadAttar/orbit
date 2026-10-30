@@ -3,8 +3,9 @@ import type { Project, Session, Settings, ClaudeSubagent } from "./types";
 import { defaultTerminal } from "../lib/platform";
 import { detectSystemLanguage } from "../i18n/i18n";
 import { loadData, debouncedSave } from "./persistence";
-import { pty, scrollback, terminal as terminalApi, listen } from "./api";
+import { pty, scrollback, terminal as terminalApi } from "./api";
 import { observeSession } from "./supervision";
+import { createObservationPoller, observationState, type ObservationLane, type ObservationTarget } from "./claudeObservation";
 
 const storeHot = import.meta.env.DEV && import.meta.env.MODE !== "test" ? import.meta.hot : undefined;
 
@@ -22,87 +23,6 @@ interface SessionStateData {
   ts: number;
   tool?: string;
   transcript_path?: string;
-}
-
-let sessionStateUnlisten: (() => void) | undefined;
-let moduleDisposed = false;
-
-async function setupSessionStateListener() {
-  try {
-    const unlisten = await listen<string>("session-state-changed", (raw) => {
-      if (moduleDisposed) return;
-      try {
-        const data = JSON.parse(raw) as SessionStateData;
-        if (!data || typeof data.session_id !== "string" || !data.session_id
-          || (!["SubagentStart", "SubagentStop"].includes(data.hook_event_name ?? "") && !["working", "idle", "waiting"].includes(data.state))
-          || !Number.isSafeInteger(data.ts) || data.ts <= 0) return;
-
-        const store = useStore.getState();
-
-        // Find matching session + project across ALL projects
-        let matchedSid: string | null = null;
-        let matchedProject: Project | null = null;
-        let matchedSession: Session | null = null;
-        for (const p of store.projects) {
-          const s = p.sessions.find((s) => s.claudeSessionId === data.session_id);
-          if (s) { matchedSid = s.id; matchedProject = p; matchedSession = s; break; }
-        }
-        if (!matchedSid || !matchedProject || !matchedSession) return;
-
-        if (matchedSession.archivedAt !== undefined || matchedSession.runtimeStatus === "exited" || matchedSession.runtimeStatus === "failed") return;
-        if (matchedSession.type === "terminal") return;
-        if (data.hook_event_name === "SubagentStart" || data.hook_event_name === "SubagentStop") {
-          if (typeof data.agent_id !== "string" || !data.agent_id.trim() || data.agent_id.length > 512
-            || (data.agent_type != null && (typeof data.agent_type !== "string" || data.agent_type.length > 4096))
-            || data.ts < (store.sessionRuntimeStartedAt[matchedSid] ?? 0)) return;
-          const previous = store.sessionSubagents[data.session_id] ?? [];
-          const old = previous.find((agent) => agent.id === data.agent_id);
-          const stopping = data.hook_event_name === "SubagentStop";
-          if (old && (data.ts < old.updatedAt || old.status === "stopped"
-            || (data.ts === old.updatedAt && !stopping))) return;
-          const agent: ClaudeSubagent = {
-            id: data.agent_id, label: data.agent_type || old?.label || data.agent_id,
-            status: stopping ? "stopped" : "running",
-            ...(old?.startedAt !== undefined ? { startedAt: old.startedAt } : !stopping ? { startedAt: data.ts } : {}),
-            updatedAt: data.ts,
-          };
-          const next = [...previous.filter((entry) => entry.id !== agent.id), agent].slice(-100);
-          useStore.setState({ sessionSubagents: { ...store.sessionSubagents, [data.session_id]: next } });
-          const pending = store.sessionPendingCompletions[data.session_id];
-          if (stopping && old?.status === "running" && pending
-            && store.sessionStates[data.session_id] === "idle"
-            && !next.some((entry) => entry.status === "running")) {
-            useStore.setState({ sessionPendingCompletions: withoutKeys(store.sessionPendingCompletions, [data.session_id]) });
-            const current = useStore.getState();
-            const projects = current.projects.map((p) => ({ ...p, sessions: p.sessions.map((ss) => ss.id === matchedSid
-              ? { ...ss, unread: current.activeSid !== matchedSid, lastActivityAt: Date.now() } : ss) }));
-            useStore.setState({ projects });
-            persist(useStore.getState());
-            announceSessionCompletion(matchedSid, matchedProject, matchedSession, pending);
-          }
-          return;
-        }
-        // Child tool/stop payloads must never complete or otherwise mutate the parent.
-        if (data.agent_id !== undefined) return;
-        if (data.ts <= (store.sessionHookTimestamps[data.session_id] ?? 0)
-          || data.ts < (store.sessionRuntimeStartedAt[matchedSid] ?? 0)) return;
-        useStore.setState({ sessionHookTimestamps: { ...store.sessionHookTimestamps, [data.session_id]: data.ts } });
-        const prev = store.sessionStates[data.session_id];
-
-        store.setSessionState(data.session_id, data.state as "working" | "idle" | "waiting");
-        if (typeof data.tool === "string" && data.tool) store.setSessionTool(data.session_id, data.tool);
-        if (data.state === "idle" && (prev === "working" || prev === "waiting")) {
-          if ((store.sessionSubagents[data.session_id] ?? []).some((agent) => agent.status === "running")) {
-            useStore.setState((s) => ({ sessionPendingCompletions: { ...s.sessionPendingCompletions, [data.session_id]: data } }));
-          } else announceSessionCompletion(matchedSid, matchedProject, matchedSession, data);
-        }
-      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("store", `session-state parse error: ${err}`)); }
-    });
-    if (moduleDisposed) unlisten();
-    else { sessionStateUnlisten?.(); sessionStateUnlisten = unlisten; }
-  } catch {
-    // Not in Tauri — skip
-  }
 }
 
 /** A child stop releases an observed parent completion, never proves success. */
@@ -158,7 +78,12 @@ function makeProject(name: string, dir: string): Project {
 // --- Store ---
 
 interface AppStore {
+  startClaudeObservation: () => () => void;
+  captureObservationTargets: () => ObservationTarget[];
+  applyClaudeSnapshot: (snapshot: unknown, targets: ObservationTarget[]) => void;
+  /** @deprecated Compatibility UI name: read-only native observation health, never hook setup. */
   hookSetup: Record<string, "pending" | "ready" | "failed">;
+  /** @deprecated Compatibility UI name: retry native observation, never configure Claude. */
   enableProjectHooks: (pid: string) => Promise<void>;
   sessionSubagents: Record<string, ClaudeSubagent[]>;
   sessionPendingCompletions: Record<string, SessionStateData>;
@@ -201,7 +126,6 @@ interface AppStore {
   setSidebarWidth: (w: number) => void;
   setFontSize: (s: number) => void;
   setDefaultMode: (mode: import("./types").SessionMode) => void;
-  setStatuslineAsked: () => void;
   updateSettings: (partial: Partial<Settings>) => void;
 
 }
@@ -288,7 +212,8 @@ export const useStore = createHotStore<AppStore>((set, get) => ({
   sessionRuntimeStartedAt: {},
   sessionCosts: {},
   init: async () => {
-    set({ sessionHookTimestamps: {}, sessionRuntimeStartedAt: {}, sessionSubagents: {}, sessionPendingCompletions: {}, hookSetup: {} });
+    const fences = Object.fromEntries(get().projects.flatMap((p) => p.sessions.map((s) => [s.id, Math.max(Date.now(), (get().sessionRuntimeStartedAt[s.id] ?? 0) + 1)])));
+    set({ sessionHookTimestamps: {}, sessionRuntimeStartedAt: fences, sessionStates: {}, sessionTools: {}, sessionSubagents: {}, sessionPendingCompletions: {}, hookSetup: {} });
     const data = await loadData();
     if (data) {
       const projects = data.projects.map((p) => {
@@ -320,22 +245,46 @@ export const useStore = createHotStore<AppStore>((set, get) => ({
       // No data — show onboarding (create first project)
       set({ loaded: true });
     }
-    // Setup watcher-based event listeners
-    await setupSessionStateListener();
+    // Observation never modifies Claude configuration.
   },
 
+  startClaudeObservation: (): (() => void) => observationPoller.start(),
+
+  captureObservationTargets: () => get().projects.flatMap((p) => p.sessions
+    .filter((s) => s.type !== "terminal" && s.archivedAt === undefined && s.runtimeStatus === "running" && !!s.claudeSessionId)
+    .map((s) => ({ id: s.id, claudeSessionId: s.claudeSessionId!, startedAt: get().sessionRuntimeStartedAt[s.id] ?? 0 }))),
+
+  applyClaudeSnapshot: (snapshot, targets) => {
+    for (const target of targets) {
+      const current = get();
+      const live = current.captureObservationTargets().find((s) => s.id === target.id && s.claudeSessionId === target.claudeSessionId && s.startedAt === target.startedAt);
+      if (!live) continue;
+      const project = current.projects.find((p) => p.sessions.some((s) => s.id === target.id))!;
+      const session = project.sessions.find((s) => s.id === target.id)!;
+      const id = target.claudeSessionId;
+      const previous = current.sessionStates[id];
+      const state = observationState(snapshot, id);
+      const source = snapshot as { available?: boolean; sessions?: unknown; error?: unknown } | null;
+      set({
+        sessionTools: withoutKeys(current.sessionTools, [id]),
+        sessionSubagents: withoutKeys(current.sessionSubagents, [id]),
+        sessionPendingCompletions: withoutKeys(current.sessionPendingCompletions, [id]),
+        sessionHookTimestamps: withoutKeys(current.sessionHookTimestamps, [id]),
+        hookSetup: { ...current.hookSetup, [project.id]: source?.available === true && Array.isArray(source.sessions) && !source.error ? "ready" : "failed" },
+        ...(state === undefined ? { sessionStates: withoutKeys(current.sessionStates, [id]) } : {}),
+      });
+      if (state === undefined) continue;
+      get().setSessionState(id, state);
+      if (state === "idle" && (previous === "working" || previous === "waiting")) {
+        announceSessionCompletion(target.id, project, session, { session_id: id, state, ts: Date.now() });
+      }
+    }
+  },
+
+  // Compatibility name for the existing UI: this retries native observation, not hooks.
   enableProjectHooks: async (pid) => {
-    const project = get().projects.find((p) => p.id === pid);
-    if (!project || get().hookSetup[pid] === "pending") return;
-    set((s) => ({ hookSetup: { ...s.hookSetup, [pid]: "pending" } }));
-    let result: "ready" | "failed" = "failed";
-    try {
-      const { claude } = await import("./api");
-      await claude.enableSessionHooks(project.dir);
-      result = "ready";
-    } catch { /* Report availability, never expose settings contents or secrets. */ }
-    set((s) => s.projects.some((p) => p.id === pid && p.dir === project.dir)
-      ? { hookSetup: { ...s.hookSetup, [pid]: result } } : s);
+    if (!get().projects.some((p) => p.id === pid)) return;
+    observationPoller.retry();
   },
 
   addProject: (name, dir) => {
@@ -350,7 +299,7 @@ export const useStore = createHotStore<AppStore>((set, get) => ({
       persist({ ...s, ...next });
       return next;
     });
-    void get().enableProjectHooks(get().activePid);
+
   },
 
   renameProject: (pid, name) =>
@@ -563,7 +512,7 @@ export const useStore = createHotStore<AppStore>((set, get) => ({
     const sessionStates = { ...s.sessionStates };
     if (session.claudeSessionId && status !== "running") delete sessionStates[session.claudeSessionId];
     const sessionRuntimeStartedAt = status === "running"
-      ? { ...s.sessionRuntimeStartedAt, [sid]: Date.now() } : s.sessionRuntimeStartedAt;
+      ? { ...s.sessionRuntimeStartedAt, [sid]: Math.max(Date.now(), (s.sessionRuntimeStartedAt[sid] ?? 0) + 1) } : s.sessionRuntimeStartedAt;
     const sessionSubagents = { ...s.sessionSubagents };
     if (session.claudeSessionId) {
       if (status === "running") delete sessionSubagents[session.claudeSessionId];
@@ -659,13 +608,6 @@ export const useStore = createHotStore<AppStore>((set, get) => ({
       return { settings };
     }),
 
-  setStatuslineAsked: () =>
-    set((s) => {
-      const settings = { ...s.settings, statuslineAsked: true };
-      persist({ ...s, settings });
-      return { settings };
-    }),
-
   updateSettings: (partial) =>
     set((s) => {
       const settings = { ...s.settings, ...partial };
@@ -675,14 +617,24 @@ export const useStore = createHotStore<AppStore>((set, get) => ({
 
 }), storeHot, data => {
   data.freshSessionIds = freshSessionIds;
-  moduleDisposed = true;
-  sessionStateUnlisten?.();
+  data.observationLane = observationLane;
+  observationPoller.stop();
+
 });
 
-if (storeHot && useStore.getState().loaded) void setupSessionStateListener();
+
 // Make the store itself the HMR boundary so Vite runs its disposal callback.
 // Components keep the same Zustand API and refresh through normal subscriptions.
 if (import.meta.hot && import.meta.env.MODE !== "test") import.meta.hot.accept();
+
+const observationLane: ObservationLane = storeHot?.data.observationLane ?? {};
+const observationPoller = createObservationPoller({
+  lane: observationLane,
+  request: async () => (await import("./api")).claude.sessionsSnapshot(),
+  targets: () => useStore.getState().captureObservationTargets(),
+  apply: (snapshot, targets) => useStore.getState().applyClaudeSnapshot(snapshot, targets),
+});
+if (storeHot && useStore.getState().loaded) observationPoller.start();
 
 // --- Selectors (reusable across components) ---
 

@@ -3,14 +3,20 @@ import { buildSupervision, selectSupervision } from "../../core/supervision";
 import type { Project } from "../../core/types";
 
 describe("supervision derived from observed session state", () => {
-  it("keeps a live child visible after its parent goes idle, but never resurrects an exited process", () => {
+  it("does not present legacy child activity/tools as official observation and reports a missing live agent as unknown", () => {
+    const projects: Project[] = [{ id: "p", name: "P", dir: "/p", sessions: [{ id: "s", name: "Parent", claudeSessionId: "c", runtimeStatus: "running", unread: true }] }];
+    const children = { c: [{ id: "old", label: "Old", status: "running" as const, updatedAt: 1 }] };
+    expect(buildSupervision(projects, {}, { c: "Old tool" }, children)[0]).toMatchObject({ status: "unknown", tool: undefined });
+    expect(buildSupervision(projects, { c: "idle" }, {}, children)[0].status).toBe("unread");
+  });
+  it("ignores legacy live children after official idle and never resurrects an exited process", () => {
     const projects: Project[] = [{ id: "p", name: "P", dir: "/p", sessions: [
       { id: "s", name: "Parent", claudeSessionId: "c", runtimeStatus: "running", unread: true },
       { id: "x", name: "Exited", claudeSessionId: "e", runtimeStatus: "exited" },
     ] }];
     const subagents = { c: [{ id: "a", label: "Explore", status: "running" as const, updatedAt: 1 }], e: [{ id: "b", label: "Explore", status: "running" as const, updatedAt: 1 }] };
     const rows = buildSupervision(projects, { c: "idle" }, {}, subagents);
-    expect(rows.map((r) => r.status)).toEqual(["working", "exited"]);
+    expect(rows.map((r) => r.status)).toEqual(["unread", "exited"]);
   });
   it("filters across projects without mixing a live process with an idle agent", () => {
     const rows = buildSupervision([{ id: "p", name: "Onyx", dir: "/onyx", sessions: [
@@ -41,8 +47,8 @@ describe("supervision derived from observed session state", () => {
     const rows = buildSupervision(projects, { c: "working", q: "waiting", i: "idle" }, { c: "Read", q: "Bash", i: "Old" });
     const byId = Object.fromEntries(rows.map((r) => [r.session.id, r]));
     expect(rows).toHaveLength(7);
-    expect(byId.work).toMatchObject({ status: "working", tool: "Read", needsAttention: false });
-    expect(byId.wait).toMatchObject({ status: "waiting", tool: "Bash", needsAttention: true });
+    expect(byId.work).toMatchObject({ status: "working", tool: undefined, needsAttention: false });
+    expect(byId.wait).toMatchObject({ status: "waiting", tool: undefined, needsAttention: true });
     expect(byId.shell).toMatchObject({ status: "running", tool: undefined, needsAttention: false });
     expect(byId.idle).toMatchObject({ status: "idle", tool: undefined });
     expect(byId.gone).toMatchObject({ status: "exited", needsAttention: false, tool: undefined });

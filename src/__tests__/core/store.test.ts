@@ -255,9 +255,9 @@ describe("store", () => {
       expect(getState().settings.sidebarWidth).toBe(300);
     });
 
-    it("setStatuslineAsked sets to true", () => {
-      getState().setStatuslineAsked();
-      expect(getState().settings.statuslineAsked).toBe(true);
+    it("keeps legacy statusline settings inert without a setup action", () => {
+      expect(getState()).not.toHaveProperty("setStatuslineAsked");
+      expect(getState().settings.statuslineAsked).toBe(false);
     });
   });
 

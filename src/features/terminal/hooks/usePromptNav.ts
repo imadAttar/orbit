@@ -1,84 +1,86 @@
-import { useRef } from "react";
-import type { Terminal as XTerm } from "@xterm/xterm";
+import { useEffect, useRef, useState } from "react";
+import type { IMarker, Terminal as XTerm } from "@xterm/xterm";
+import { scanPromptPreviews } from "../terminalPromptAnchors";
 
-/**
- * Prompt navigation hook — jump between Claude Code prompts (❯ / >) in the terminal buffer.
- * Used with Cmd+Up/Down keyboard shortcuts and mini-nav buttons.
- *
- * Caches prompt positions and only scans new lines since last scan.
- */
-export function usePromptNav(termRef: React.RefObject<XTerm | null>) {
-  const promptIndexRef = useRef(-1);
+export interface PromptNavEntry { id: number; line: number; excerpt: string }
+interface Anchor { marker: IMarker; excerpt: string }
+interface Owner { term: XTerm; refresh: () => void; dispose: () => void; anchors: Anchor[] }
+
+/** Read-only navigation over heuristic rendered markers, not conversation state. */
+export function usePromptNav(termRef: React.RefObject<XTerm | null>, enabled = true) {
+  const [previews, setPreviews] = useState<PromptNavEntry[]>([]);
+  const ownerRef = useRef<Owner | null>(null);
   const jumpRef = useRef<(dir: "prev" | "next") => void>(() => {});
-  const cachedPromptsRef = useRef<number[]>([]);
-  const lastScannedRef = useRef(0);
 
-  const getPromptLines = (): number[] => {
-    const term = termRef.current;
-    if (!term) return [];
-    const buf = term.buffer.active;
-    const totalLines = buf.length;
-    const startFrom = lastScannedRef.current;
-
-    // Invalidate cache if buffer was reset (shrunk)
-    if (totalLines < startFrom) {
-      cachedPromptsRef.current = [];
-      lastScannedRef.current = 0;
-    }
-
-    // Only scan new lines since last call
-    for (let i = lastScannedRef.current; i < totalLines; i++) {
-      const line = buf.getLine(i);
-      if (!line) continue;
-      const text = line.translateToString(true);
-      if (/^❯\s/.test(text) || /^>\s/.test(text)) {
-        cachedPromptsRef.current.push(i);
-      }
-    }
-    lastScannedRef.current = totalLines;
-    return cachedPromptsRef.current;
-  };
-
-  const jumpToPrompt = (direction: "prev" | "next") => {
-    const term = termRef.current;
+  // Ref contents can change without ref identity changing (PTY restart/restore).
+  // Reconcile after every owning render, but retain subscriptions for the same instance.
+  useEffect(() => {
+    const term = enabled ? termRef.current : null;
+    if (ownerRef.current?.term === term) return;
+    ownerRef.current?.dispose();
+    ownerRef.current = null;
+    setPreviews((old) => old.length ? [] : old);
     if (!term) return;
-    const prompts = getPromptLines();
-    if (prompts.length === 0) return;
-
-    const viewportTop = term.buffer.active.viewportY;
-
-    if (direction === "prev") {
-      let target = -1;
-      for (let i = prompts.length - 1; i >= 0; i--) {
-        if (prompts[i] < viewportTop) {
-          target = i;
-          break;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    const owner: Owner = { term, anchors: [], refresh, dispose };
+    function refresh() {
+      if (disposed) return;
+      const found = scanPromptPreviews(term!.buffer.active);
+      const remaining = new Set(owner.anchors);
+      const anchors: Anchor[] = [];
+      for (const entry of found) {
+        let anchor = owner.anchors.find((a) => !a.marker.isDisposed && a.marker.line === entry.line && a.excerpt === entry.excerpt);
+        if (anchor) remaining.delete(anchor);
+        else {
+          const marker = term!.registerMarker(entry.line - (term!.buffer.active.baseY + term!.buffer.active.cursorY));
+          if (!marker) continue;
+          anchor = { marker, excerpt: entry.excerpt };
         }
+        anchors.push(anchor);
       }
-      if (target >= 0) {
-        promptIndexRef.current = target;
-        term.scrollToLine(Math.max(0, prompts[target]));
-      }
-    } else {
-      const viewportBottom = viewportTop + term.rows;
-      let target = -1;
-      for (let i = 0; i < prompts.length; i++) {
-        if (prompts[i] > viewportBottom) {
-          target = i;
-          break;
-        }
-      }
-      if (target >= 0) {
-        promptIndexRef.current = target;
-        term.scrollToLine(Math.max(0, prompts[target]));
-      } else {
-        term.scrollToBottom();
-      }
+      remaining.forEach((anchor) => anchor.marker.dispose());
+      owner.anchors = anchors;
+      const next = anchors.map(({ marker, excerpt }) => ({ id: marker.id, line: marker.line, excerpt }));
+      setPreviews((old) => old.length === next.length && old.every((entry, i) => entry.id === next[i].id && entry.line === next[i].line && entry.excerpt === next[i].excerpt) ? old : next);
     }
+    function schedule() {
+      if (timer !== undefined || disposed) return;
+      timer = setTimeout(() => { timer = undefined; refresh(); }, 80);
+    }
+    const subscriptions = [term.onWriteParsed(schedule), term.onResize(schedule), term.onRender(schedule), term.buffer.onBufferChange(refresh)];
+    function dispose() {
+      disposed = true;
+      clearTimeout(timer);
+      subscriptions.forEach((subscription) => subscription.dispose());
+      owner.anchors.forEach((anchor) => anchor.marker.dispose());
+      owner.anchors = [];
+    }
+    ownerRef.current = owner;
+    refresh();
+  });
+  useEffect(() => () => { ownerRef.current?.dispose(); ownerRef.current = null; }, []);
+
+  const jumpToPreview = (id: number) => {
+    const owner = ownerRef.current;
+    if (!enabled || !owner || owner.term !== termRef.current || owner.term.buffer.active.type !== "normal") return;
+    // Markers move with trim/reflow; refresh also rejects in-place redraw/reset changes.
+    owner.refresh();
+    const anchor = owner.anchors.find((a) => a.marker.id === id && !a.marker.isDisposed);
+    if (anchor) owner.term.scrollToLine(anchor.marker.line);
   };
-
-  // Keep ref in sync so the xterm key handler can call the latest jumpToPrompt
+  const jumpToPrompt = (direction: "prev" | "next") => {
+    const owner = ownerRef.current;
+    if (!enabled || !owner || owner.term !== termRef.current || owner.term.buffer.active.type !== "normal") return;
+    owner.refresh();
+    const top = owner.term.buffer.active.viewportY;
+    const anchors = owner.anchors.filter((a) => !a.marker.isDisposed);
+    const anchor = direction === "prev"
+      ? anchors.slice().reverse().find((a) => a.marker.line < top)
+      : anchors.find((a) => a.marker.line > top + owner.term.rows);
+    if (anchor) owner.term.scrollToLine(anchor.marker.line);
+    else if (direction === "next") owner.term.scrollToBottom();
+  };
   jumpRef.current = jumpToPrompt;
-
-  return { jumpToPrompt, jumpRef };
+  return { previews, jumpToPreview, jumpToPrompt, jumpRef, focusTerminal: () => termRef.current?.focus() };
 }

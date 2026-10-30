@@ -1,42 +1,40 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 vi.mock("../../core/persistence", () => ({ loadData: vi.fn().mockResolvedValue(null), debouncedSave: vi.fn() }));
-vi.mock("../../core/api", () => ({ pty: { killSilent: vi.fn() }, scrollback: { clear: vi.fn() }, terminal: { notifyDone: vi.fn() }, listen: vi.fn().mockResolvedValue(() => {}) }));
+vi.mock("../../core/api", () => ({ pty: { killSilent: vi.fn() }, scrollback: { clear: vi.fn() }, terminal: { notifyDone: vi.fn() }, listen: vi.fn() }));
 import { useStore } from "../../core/store";
-import { listen } from "../../core/api";
+import { listen, terminal } from "../../core/api";
 import { buildSupervision } from "../../core/supervision";
-
 let home: string | undefined;
 afterEach(() => { if (home) rmSync(home, { recursive: true, force: true }); });
-it("consumes real Python hook payloads through the frontend listener without inference or live settings", async () => {
-  home = mkdtempSync(join(tmpdir(), "orbit-hook-roundtrip-"));
-  expect(dirname(home)).toBe(tmpdir());
+it("feeds a portable JSON CLI fixture into the real native-snapshot consumer without Cargo artifacts", async () => {
+  home = mkdtempSync(join(tmpdir(), "orbit-json-roundtrip-"));
+  const fixture = join(home, "claude-fixture.cjs");
+  writeFileSync(fixture, `const fs=require("node:fs");const assert=require("node:assert/strict");
+assert.deepEqual(process.argv.slice(2),["agents","--json","--all"]);
+console.log(JSON.stringify({available:true,sessions:JSON.parse(fs.readFileSync(process.env.HOME+"/entries.json","utf8"))}));`);
   await useStore.getState().init();
-  const calls = vi.mocked(listen).mock.calls;
-  const receive = calls[calls.length - 1][1] as (raw: string) => void;
-  useStore.setState({ activePid: "p", activeSid: "s", projects: [{ id: "p", name: "Fixture", dir: home, sessions: [{ id: "s", name: "Parent", claudeSessionId: "roundtrip", runtimeStatus: "running" }] }], sessionStates: {}, sessionSubagents: {} });
-  const run = (event: string, extra = {}) => {
-    const result = spawnSync("python3", [join(process.cwd(), "src-tauri/resources/orbit-session-hook.py")], {
-      input: JSON.stringify({ session_id: "roundtrip", hook_event_name: event, ...extra }),
-      cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8", timeout: 5000,
-    });
+  expect(listen).not.toHaveBeenCalledWith("session-state-changed", expect.any(Function));
+  useStore.setState({ activePid: "p", activeSid: "elsewhere", sessionRuntimeStartedAt: {}, projects: [{ id: "p", name: "Fixture", dir: home, sessions: [{ id: "s", name: "Parent", claudeSessionId: "roundtrip", runtimeStatus: "running" }] }], sessionStates: {}, sessionSubagents: {}, settings: { ...useStore.getState().settings, autoNotifications: true } });
+  const run = (entries: object[]) => {
+    writeFileSync(join(home!, "entries.json"), JSON.stringify(entries));
+    const result = spawnSync(process.execPath, [fixture, "agents", "--json", "--all"], { cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8", timeout: 5000 });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toBe("");
-    const file = readdirSync(join(home!, ".orbit")).map((name) => readFileSync(join(home!, ".orbit", name), "utf8"))
-      .find((raw) => { const d = JSON.parse(raw); return d.hook_event_name === event || (!d.hook_event_name && !event.startsWith("Subagent")); });
-    expect(file).toBeTruthy(); receive(file!);
+    const snapshot = JSON.parse(result.stdout);
+    useStore.getState().applyClaudeSnapshot(snapshot, useStore.getState().captureObservationTargets());
+    const state = useStore.getState();
+    expect(JSON.stringify(state.projects)).not.toContain("private title");
+    return buildSupervision(state.projects, state.sessionStates, state.sessionTools, state.sessionSubagents)[0].status;
   };
-  run("UserPromptSubmit");
-  run("SubagentStart", { agent_id: "observed-child" });
-  run("Stop");
-  let state = useStore.getState();
-  expect(buildSupervision(state.projects, state.sessionStates, state.sessionTools, state.sessionSubagents)[0].status).toBe("working");
-  expect(state.sessionSubagents.roundtrip[0].status).toBe("running");
-  run("SubagentStop", { agent_id: "observed-child" });
-  state = useStore.getState();
-  expect(state.sessionSubagents.roundtrip[0].status).toBe("stopped");
-  expect(buildSupervision(state.projects, state.sessionStates, state.sessionTools, state.sessionSubagents)[0].status).toBe("idle");
-});
+  const entry = { sessionId: "roundtrip", kind: "interactive", pid: 123, title: "private title", cwd: "/private" };
+  expect(run([{ ...entry, status: "busy" }])).toBe("working");
+  expect(run([{ ...entry, status: "waiting", waitingFor: "permission prompt" }])).toBe("waiting");
+  expect(run([{ ...entry, status: "idle" }])).toBe("unread");
+  run([{ ...entry, status: "idle" }]);
+  expect(terminal.notifyDone).toHaveBeenCalledOnce();
+  expect(run([{ kind: "interactive", pid: 456, status: "busy" }])).toBe("unknown");
+  expect(useStore.getState().projects[0].sessions[0].runtimeStatus).toBe("running");
+}, 10000);

@@ -1,11 +1,10 @@
 mod claude;
+mod claude_sessions;
 mod logging;
 mod preview;
 mod pty;
-mod statusline;
 mod terminal;
 mod validation;
-mod watcher;
 
 #[cfg(target_os = "macos")]
 use tauri::menu::AboutMetadata;
@@ -117,10 +116,7 @@ pub fn run() {
             claude::install_claude,
             claude::generate_title,
             claude::generate_session_title,
-            claude::enable_session_hooks,
-            claude::check_session_hooks,
-            statusline::has_statusline,
-            statusline::create_statusline,
+            claude_sessions::claude_sessions_snapshot,
             pty::spawn_pty,
             pty::write_pty,
             pty::resize_pty,
@@ -137,15 +133,9 @@ pub fn run() {
             terminal::collect_crash_report,
             terminal::log_frontend,
         ])
-        .setup(|app| {
+        .setup(|_app| {
             logging::init();
             tracing::info!("Orbit starting");
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                if let Err(e) = watcher::setup_watcher(handle) {
-                    tracing::error!("watcher error: {e}");
-                }
-            });
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -153,4 +143,76 @@ pub fn run() {
             eprintln!("Fatal error: {e}");
             std::process::exit(1);
         });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn shipping_resources_exclude_retired_hook_producers() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert!(config["bundle"].get("resources").is_none());
+        assert!(config["bundle"]["icon"]
+            .as_array()
+            .is_some_and(|icons| !icons.is_empty()));
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for retired in [
+            "resources/orbit-session-hook.py",
+            "resources/orbit-stop-hook.sh",
+            "resources/orbit-stop-hook.ps1",
+            "resources/orbit-track-usage.sh",
+            "resources/statusline.sh",
+            "src/watcher.rs",
+            "src/statusline.rs",
+            "../scripts/test_session_hook.py",
+        ] {
+            assert!(!root.join(retired).exists(), "retired producer: {retired}");
+        }
+    }
+
+    #[test]
+    fn production_registry_has_no_claude_config_mutators_or_legacy_watcher() {
+        let production = include_str!("lib.rs").split("#[cfg(test)]").next().unwrap();
+        let registry = production
+            .split_once("tauri::generate_handler![")
+            .unwrap()
+            .1
+            .split_once("])")
+            .unwrap()
+            .0;
+        for retired in [
+            "enable_session_hooks",
+            "check_session_hooks",
+            "remove_session_hooks",
+            "create_statusline",
+            "has_statusline",
+            "enable_statusline",
+            "check_statusline",
+            "install_statusline",
+            "remove_statusline",
+        ] {
+            assert!(
+                !registry.contains(retired),
+                "retired IPC command: {retired}"
+            );
+        }
+        assert!(!production.contains("mod watcher;"));
+        assert!(!production.contains("watcher::"));
+        let claude = include_str!("claude.rs");
+        assert!(!claude.contains("settings.local.json"));
+        assert!(!claude.contains("std::fs::write"));
+        assert!(!claude.contains("std::fs::create_dir"));
+        for retained in [
+            "claude::check_claude_installed",
+            "claude::install_claude",
+            "claude::generate_title",
+            "claude::generate_session_title",
+            "claude_sessions::claude_sessions_snapshot",
+        ] {
+            assert!(
+                registry.contains(retained),
+                "retained IPC command: {retained}"
+            );
+        }
+    }
 }

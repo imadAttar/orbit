@@ -1,0 +1,27 @@
+.prompt-peek {
+  position: absolute;
+  z-index: 5;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  padding: 4px 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text-dim);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--text) 8%, transparent);
+}
+.prompt-peek button { display: flex; align-items: center; justify-content: center; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; border-radius: 3px; }
+.prompt-peek button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.prompt-peek__step { height: 22px; font: 16px/1 system-ui, sans-serif; }
+.prompt-peek__step:hover { color: var(--text); background: var(--highlight-subtle); }
+.prompt-peek__markers { display: flex; flex-direction: column; max-height: min(240px, 40vh); padding: 3px 0; }
+.prompt-peek__marker { height: 9px; min-height: 4px; flex-shrink: 1; }
+.prompt-peek__marker span { width: 10px; height: 2px; border-radius: 2px; background: var(--text-dim); opacity: .6; }
+.prompt-peek__marker:hover span, .prompt-peek__marker:focus-visible span, .prompt-peek__marker--peek span { width: 16px; background: var(--accent); opacity: 1; }
+.prompt-peek__preview { position: absolute; right: calc(100% + 10px); top: 0; width: min(320px, calc(100vw - 100px)); box-sizing: border-box; display: grid; gap: 9px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); box-shadow: 0 6px 24px color-mix(in srgb, var(--text) 12%, transparent); pointer-events: none; }
+.prompt-peek__caption { font: 500 11px/1.4 system-ui, sans-serif; color: var(--text-dim); }
+.prompt-peek__excerpt { font: 13px/1.5 system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: hidden; }
+.prompt-peek__hint { font: 10px/1.4 system-ui, sans-serif; color: var(--text-dim); }
+@media (forced-colors: active) { .prompt-peek__marker span { background: ButtonText; } }

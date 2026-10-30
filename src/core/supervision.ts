@@ -21,13 +21,13 @@ export function selectSupervision(rows: SupervisionRow[], filter: SupervisionFil
       || (b.session.lastActivityAt ?? 0) - (a.session.lastActivityAt ?? 0));
 }
 
-export function observeSession(session: Session, states: SessionStates, subagents: ClaudeSubagent[] = []): SupervisionStatus {
+export function observeSession(session: Session, states: SessionStates, _subagents: ClaudeSubagent[] = []): SupervisionStatus {
   const hook = session.type !== "terminal" && session.claudeSessionId ? states[session.claudeSessionId] : undefined;
   // Process termination is authoritative; old hooks cannot resurrect it.
   return session.runtimeStatus === "failed" ? "failed"
     : session.runtimeStatus === "exited" ? (session.unread ? "unread" : "exited")
     : hook === "waiting" || hook === "working" ? hook
-    : session.type !== "terminal" && subagents.some((a) => a.status === "running") ? "working"
+    : session.type !== "terminal" && session.runtimeStatus === "running" && hook === undefined ? "unknown"
     : session.unread ? "unread"
     : hook === "idle" ? "idle"
     : session.runtimeStatus === "running" ? "running" : "unknown";
@@ -37,7 +37,7 @@ export function needsAttention(status: SupervisionStatus): boolean {
   return status === "waiting" || status === "failed" || status === "unread";
 }
 
-export function buildSupervision(projects: Project[], states: SessionStates, tools: Record<string, string>, subagents: Record<string, ClaudeSubagent[]> = {}): SupervisionRow[] {
+export function buildSupervision(projects: Project[], states: SessionStates, _tools: Record<string, string>, subagents: Record<string, ClaudeSubagent[]> = {}): SupervisionRow[] {
   return projects.flatMap((project) => project.sessions
     .filter((session) => session.archivedAt === undefined)
     .map((session): SupervisionRow => {
@@ -45,8 +45,8 @@ export function buildSupervision(projects: Project[], states: SessionStates, too
       return {
         project, session, status,
         needsAttention: needsAttention(status),
-        tool: (status === "working" || status === "waiting") && session.claudeSessionId
-          ? tools[session.claudeSessionId] || undefined : undefined,
+        // Official session snapshots do not expose per-tool details.
+        tool: undefined,
       };
     }));
 }
