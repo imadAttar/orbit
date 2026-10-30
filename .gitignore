@@ -48,3 +48,4 @@ qa-output/
 /docs/*QA.md
 /docs/1.1-release-scope.md
 /docs/RELEASE-v1.2.0.md
+/scripts/release.sh
