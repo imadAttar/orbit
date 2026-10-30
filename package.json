@@ -1,8 +1,8 @@
 {
   "name": "orbit",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || >=26.0.0"

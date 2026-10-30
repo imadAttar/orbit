@@ -35,3 +35,17 @@ tests/computer-use/.orbit-test-state.json
 __pycache__/
 *.pyc
 qa-output/
+.pytest_cache/
+
+# Local agent settings, audits and working notes (not product sources)
+/.agents/
+/.codex/
+/.hermes/
+/AGENTS.md
+/audit/
+/sketches/
+/docs/research/
+/docs/*QA.md
+/docs/1.1-release-scope.md
+/docs/RELEASE-v1.2.0.md
+/scripts/release.sh

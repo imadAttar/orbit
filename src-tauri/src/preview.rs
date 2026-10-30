@@ -40,7 +40,7 @@ fn project_root(roots: &[PathBuf], project: &Path) -> Result<PathBuf, String> {
 
 fn checked_path(path: &str) -> Result<&Path, String> {
     let p = Path::new(path);
-    if path.contains('\\')
+    if (cfg!(not(windows)) && path.contains('\\'))
         || path.chars().any(char::is_control)
         || p.components()
             .any(|c| matches!(c, std::path::Component::ParentDir))
@@ -459,6 +459,32 @@ mod tests {
             f.0,
             temp_dir
         );
+    }
+    #[test]
+    fn checked_path_respects_native_separators_without_allowing_traversal_or_controls() {
+        for path in [
+            r"sub\note.txt",
+            r"C:\project\note.txt",
+            r"\\?\C:\project\note.txt",
+        ] {
+            assert_eq!(checked_path(path).is_ok(), cfg!(windows), "{path:?}");
+        }
+        for path in [
+            "../secret.txt",
+            "sub/../note.txt",
+            r"..\secret.txt",
+            r"sub\..\note.txt",
+            r"C:\project\..\secret.txt",
+            r"\\?\C:\project\..\secret.txt",
+            "note\0.txt",
+            "note\n.txt",
+            "note\r.txt",
+            "note\t.txt",
+            "note\u{7f}.txt",
+        ] {
+            assert!(checked_path(path).is_err(), "{path:?}");
+        }
+        assert!(checked_path("sub/note.txt").is_ok());
     }
     #[test]
     fn scope_blocks_traversal_symlink_escape_and_grants_only_exact_file() {
