@@ -1,8 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../core/store";
-import { pty, claude, statusline, listen } from "../core/api";
+import { pty, claude, listen } from "../core/api";
 import { initAnalytics, setAnalyticsEnabled, trackEvent } from "../lib/analytics";
-import { isWindows } from "../lib/platform";
 import { initUpdater, onUpdateStatus } from "../features/updater";
 import type { UpdateStatus } from "../features/updater";
 
@@ -13,6 +12,7 @@ export function useAppInit(dispatch: (action: any) => void) {
 
   useEffect(() => {
     let cancelled = false;
+    let stopObservation: (() => void) | undefined;
     let consentReady = false;
     const unsubscribe = useStore.subscribe((state, previous) => {
       if (consentReady && state.settings.analytics !== previous.settings.analytics) {
@@ -40,26 +40,15 @@ export function useAppInit(dispatch: (action: any) => void) {
         autoUpdate: s.autoUpdate ? 1 : 0,
       });
       initUpdater();
-      // Telemetry is independent of desktop notification preferences.
-      for (const p of state.projects) {
-        void state.enableProjectHooks(p.id);
-      }
-      const checkInstalled = claude.isInstalled().catch(() => true);
-      const checkStatusline = !s.statuslineAsked && !isWindows
-        ? statusline.has().catch(() => true)
-        : Promise.resolve(true);
-      const [installed, hasStatusline] = await Promise.all([checkInstalled, checkStatusline]);
+      stopObservation = state.startClaudeObservation();
+      const installed = await claude.isInstalled().catch(() => true);
       if (cancelled) return;
       if (!installed) {
         dispatch({ type: "set", field: "showInstallClaude", value: true });
         return;
       }
-      if (!s.statuslineAsked && !isWindows) {
-        if (!hasStatusline) dispatch({ type: "set", field: "showStatuslinePrompt", value: true });
-        else useStore.getState().setStatuslineAsked();
-      }
     }).catch(() => { /* initialization failed: leave analytics disabled */ });
-    return () => { cancelled = true; unsubscribe(); };
+    return () => { cancelled = true; stopObservation?.(); unsubscribe(); };
   }, [init]);
 
   useEffect(

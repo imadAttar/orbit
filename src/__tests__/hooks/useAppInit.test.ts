@@ -11,7 +11,8 @@ const mockInitAnalytics = vi.fn();
 const mockTrackEvent = vi.fn();
 const mockInitUpdater = vi.fn();
 const mockOnUpdateStatus = vi.fn().mockReturnValue(() => {});
-const mockSetStatuslineAsked = vi.fn();
+const mockCreateStatusline = vi.fn();
+const mockRemoveHooks = vi.fn();
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
   readTextFile: vi.fn().mockRejectedValue(new Error("no fs")),
@@ -28,8 +29,8 @@ vi.mock("../../lib/analytics", () => ({
   setAnalyticsEnabled: vi.fn(),
 }));
 vi.mock("../../core/api", () => ({
-  claude: { isInstalled: () => mockIsInstalled(), enableSessionHooks: vi.fn().mockResolvedValue(false) },
-  statusline: { has: () => mockHasStatusline() },
+  claude: { isInstalled: () => mockIsInstalled(), sessionsSnapshot: vi.fn().mockResolvedValue({ available: true, sessions: [] }), enableSessionHooks: vi.fn(), checkSessionHooks: vi.fn(), removeSessionHooks: (...args: unknown[]) => mockRemoveHooks(...args) },
+  statusline: { has: () => mockHasStatusline(), create: () => mockCreateStatusline() },
   listen: (...args: unknown[]) => mockListen(...args),
   pty: { spawn: vi.fn(), write: vi.fn(), kill: vi.fn(), killSilent: vi.fn(), resize: vi.fn() },
   orbit: { readFile: vi.fn(), writeFile: vi.fn() },
@@ -50,6 +51,7 @@ vi.mock("../../i18n/i18n", () => ({
 }));
 
 import { useStore } from "../../core/store";
+import { claude } from "../../core/api";
 import { useAppInit } from "../../hooks/useAppInit";
 
 describe("useAppInit", () => {
@@ -78,11 +80,27 @@ describe("useAppInit", () => {
       ],
       activePid: "p1",
       activeSid: "s1",
-      setStatuslineAsked: mockSetStatuslineAsked,
     });
   });
 
   afterEach(() => cleanup());
+
+  it("starts read-only native observation and stops its owner without enabling hooks or statusline prompts", async () => {
+    const stop = vi.fn();
+    const start = vi.fn().mockReturnValue(stop);
+    const previous = useStore.getState().startClaudeObservation;
+    useStore.setState({ startClaudeObservation: start });
+    const { unmount } = renderHook(() => useAppInit(dispatch));
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    expect(Reflect.get(claude, "enableSessionHooks")).not.toHaveBeenCalled();
+    expect(Reflect.get(claude, "checkSessionHooks")).not.toHaveBeenCalled();
+    expect(mockRemoveHooks).not.toHaveBeenCalled();
+    expect(mockHasStatusline).not.toHaveBeenCalled();
+    expect(mockCreateStatusline).not.toHaveBeenCalled();
+    unmount();
+    expect(stop).toHaveBeenCalledOnce();
+    useStore.setState({ startClaudeObservation: previous });
+  });
 
   it("deduplicates initialization under StrictMode", async () => {
     renderHook(() => useAppInit(dispatch), { wrapper: StrictMode });
@@ -189,22 +207,14 @@ describe("useAppInit", () => {
     );
   });
 
-  it("dispatches showStatuslinePrompt when statusline missing", async () => {
-    mockHasStatusline.mockResolvedValueOnce(false);
+  it.each([false, true])("never checks or installs statusline for legacy asked=%s", async (statuslineAsked) => {
+    useStore.setState({ settings: { ...useStore.getState().settings, statuslineAsked } });
     renderHook(() => useAppInit(dispatch));
-    await vi.waitFor(() =>
-      expect(dispatch).toHaveBeenCalledWith({
-        type: "set",
-        field: "showStatuslinePrompt",
-        value: true,
-      }),
-    );
-  });
-
-  it("calls setStatuslineAsked when statusline already exists", async () => {
-    mockHasStatusline.mockResolvedValueOnce(true);
-    renderHook(() => useAppInit(dispatch));
-    await vi.waitFor(() => expect(mockSetStatuslineAsked).toHaveBeenCalled());
+    await vi.waitFor(() => expect(mockInitUpdater).toHaveBeenCalled());
+    expect(mockHasStatusline).not.toHaveBeenCalled();
+    expect(mockCreateStatusline).not.toHaveBeenCalled();
+    expect(mockRemoveHooks).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ field: "showStatuslinePrompt" }));
   });
 
   it("skips statusline check when statuslineAsked is true", async () => {

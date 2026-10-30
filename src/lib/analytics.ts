@@ -13,7 +13,7 @@ const requests = new Set<AbortController>();
 const events = new Set((`app_init daily_active app_launched window_focused window_blurred app_closed
 project_created project_switched project_renamed project_deleted session_created terminal_session_created
 session_switched session_reordered session_renamed session_closed session_deleted session_reset
-notification_clicked shortcut_used onboarding_shown statusline_created claude_installed
+notification_clicked shortcut_used onboarding_shown claude_installed
 error_boundary crash_report_sent theme_changed font_size_changed language_changed default_mode_changed
 auto_notifications_changed preferences_saved session_fresh_start mode_normal mode_yolo prompt_nav mode_toggle
 file_opened_from_terminal pty_spawn_attempted pty_spawned pty_error session_resume_attempted

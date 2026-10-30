@@ -17,8 +17,9 @@ vi.mock("../../layout/TabBar", () => ({ default: () => null }));
 vi.mock("../../layout/ContextBar", () => ({ default: () => null }));
 vi.mock("../../layout/StatusBar", () => ({ default: () => null }));
 vi.mock("../../features/UpdateBanner", () => ({ default: () => null }));
-vi.mock("../../modals/AppModals", () => ({ StatuslineModal: () => null, DeleteSessionModal: () => null, InstallClaudeModal: () => null }));
+vi.mock("../../modals/AppModals", () => ({ StatuslineModal: () => <div role="dialog">Custom statusline installer</div>, DeleteSessionModal: () => null, InstallClaudeModal: () => null }));
 import App from "../../App";
+import { useAppInit } from "../../hooks/useAppInit";
 import { useStore } from "../../core/store";
 import { trackEvent } from "../../lib/analytics";
 import { I18nProvider } from "../../i18n/i18n";
@@ -37,6 +38,15 @@ describe("workspace integration", () => {
   fireEvent.click(create);
   await waitFor(() => expect(pendingModal.render).toHaveBeenCalled());
   expect(screen.getByRole("button", { name: /creer un projet/i })).toBe(create);
+ });
+ it("never opens a custom Claude statusline installer, even after a stale prompt action", async () => {
+  render(app());
+  expect(await screen.findByTestId("mounted-a")).toBeTruthy();
+  const calls = vi.mocked(useAppInit).mock.calls;
+  const dispatch = calls[calls.length - 1][0];
+  act(() => dispatch({ type: "set", field: "showStatuslinePrompt", value: true }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByTestId("mounted-a")).toBeTruthy();
  });
  it("unmounts archived terminals and never mounts pre-existing archives", async () => {
   render(app());

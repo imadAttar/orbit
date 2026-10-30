@@ -4,7 +4,8 @@ Le tag v1.2.0 a été conservé après un échec de vérification Windows ; aucu
 
 ## Nouveautés
 
-- Supervision des sessions de tous les projets et visibilité des sous-agents observés.
+- Supervision des sessions par l’interface officielle `claude agents --json --all`, sans installation de hooks ni de status line. Les événements détaillés des sous-agents imbriqués ne sont pas exposés par cette interface.
+- Navigation dans les prompts affichés du terminal : aperçu au survol et saut au clic, sans reconstruire les conversations.
 - Aperçu web, Markdown, texte et images à côté du terminal, en lecture seule.
 - Interface Mac plus compacte ; application cohérente des neuf thèmes, y compris pendant l’aperçu des préférences et son annulation.
 - Fiabilité des sauvegardes en développement, signalement des résultats différés et validation des chemins de fichiers renforcés.

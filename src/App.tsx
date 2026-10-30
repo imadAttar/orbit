@@ -3,7 +3,6 @@ import { useStore, selectActiveProject, selectActiveSession } from "./core/store
 import { trackEvent } from "./lib/analytics";
 import { useT } from "./i18n/i18n";
 
-import ContextBar from "./layout/ContextBar";
 import TerminalToolbar from "./layout/TerminalToolbar";
 import PreviewIcon from "./features/preview/PreviewIcon";
 import "./features/preview/preview.css";
@@ -13,11 +12,10 @@ import ErrorBoundary from "./shared/ErrorBoundary";
 
 import Sidebar from "./layout/Sidebar";
 import SupervisionPanel from "./features/supervision/SupervisionPanel";
-import SubagentRoster from "./features/supervision/SubagentRoster";
 import FocusTrap from "./shared/FocusTrap";
 import UpdateBanner from "./features/UpdateBanner";
 import StatusBar from "./layout/StatusBar";
-import { StatuslineModal, DeleteSessionModal, InstallClaudeModal } from "./modals/AppModals";
+import { DeleteSessionModal, InstallClaudeModal } from "./modals/AppModals";
 import { handleKeyboardShortcut } from "./keyboard/keyboardHandler";
 import type { UpdateStatus } from "./features/updater";
 import { useAppInit } from "./hooks/useAppInit";
@@ -37,7 +35,6 @@ interface UIState {
   showPreferences: boolean;
   confirmDeleteSession: string | null;
   searchOpen: boolean;
-  showStatuslinePrompt: boolean;
   showInstallClaude: boolean;
   contextMenu: { sid: string; x: number; y: number } | null;
   updateStatus: UpdateStatus;
@@ -79,7 +76,7 @@ export default function App() {
   const [ui, dispatch] = useReducer(uiReducer, {
     showSupervision: false,
     showNewProject: false, showPreferences: false, confirmDeleteSession: null,
-    searchOpen: false, showStatuslinePrompt: false, showInstallClaude: false,
+    searchOpen: false, showInstallClaude: false,
     contextMenu: null,
     updateStatus: { state: "idle" } as UpdateStatus, prevActivePid: "",
   });
@@ -178,10 +175,9 @@ export default function App() {
         <div className="resize-handle" role="separator" aria-orientation="vertical" onMouseDown={handleResizeStart} />
         <div className="terminal-area">
           <div className="chat__breadcrumb">
-            {ui.showSupervision ? <><span>{t("supervision.title")}</span><div className="chat__breadcrumb-spacer" /><button className="supervision-back" onClick={() => dispatch({ type: "set", field: "showSupervision", value: false })}>{t("supervision.back")}</button></> : <><span>{activeProject.name}</span> &rsaquo; <span className="chat__session-name" title={activeProject.dir}>{activeSession.name}</span><div className="chat__breadcrumb-spacer" /><ContextBar conversationId={activeSession.type === "terminal" ? undefined : activeSession.claudeSessionId} /><TerminalToolbar searchOpen={ui.searchOpen} onSearch={() => dispatch({ type: "toggleSearch" })} /><button className="preview-toggle" title={t("preview.open")} aria-label={t("preview.open")} aria-pressed={previewView.open} onClick={() => usePreviewStore.getState().dispatch(activePid, { type: "toggle" })}><PreviewIcon kind="panel" /><span>{t("preview.title")}</span></button></>}
+            {ui.showSupervision ? <><span>{t("supervision.title")}</span><div className="chat__breadcrumb-spacer" /><button className="supervision-back" onClick={() => dispatch({ type: "set", field: "showSupervision", value: false })}>{t("supervision.back")}</button></> : <><span>{activeProject.name}</span> &rsaquo; <span className="chat__session-name" title={activeProject.dir}>{activeSession.name}</span><div className="chat__breadcrumb-spacer" /><TerminalToolbar searchOpen={ui.searchOpen} onSearch={() => dispatch({ type: "toggleSearch" })} /><button className="preview-toggle" title={t("preview.open")} aria-label={t("preview.open")} aria-pressed={previewView.open} onClick={() => usePreviewStore.getState().dispatch(activePid, { type: "toggle" })}><PreviewIcon kind="panel" /><span>{t("preview.title")}</span></button></>}
           </div>
           <ErrorBoundary>
-            {!ui.showSupervision && activeSession.type !== "terminal" && <SubagentRoster key={activeSid} conversationId={activeSession.claudeSessionId} />}
             {ui.showSupervision && <SupervisionPanel onOpen={(sid) => { useStore.getState().setActiveSession(sid); dispatch({ type: "set", field: "showSupervision", value: false }); }} />}
             <div className={`terminal-area__body ${ui.showSupervision ? "terminal-area__body--supervision" : ""}`}>
               <div className="terminal-area__terminals">
@@ -221,7 +217,6 @@ export default function App() {
             </FocusTrap>
           </div>
         )}
-        {ui.showStatuslinePrompt && <StatuslineModal onClose={() => dispatch({ type: "set", field: "showStatuslinePrompt", value: false })} />}
         {ui.confirmDeleteSession && <DeleteSessionModal sessionId={ui.confirmDeleteSession} sessions={projects.flatMap((p) => p.sessions)}
           onConfirm={() => { removeSession(ui.confirmDeleteSession!); trackEvent("session_deleted"); dispatch({ type: "set", field: "confirmDeleteSession", value: null }); }}
           onCancel={() => dispatch({ type: "set", field: "confirmDeleteSession", value: null })} />}

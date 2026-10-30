@@ -38,6 +38,8 @@ const mockTermDispose = vi.fn();
 const mockTermLoadAddon = vi.fn();
 const mockTermOnData = vi.fn();
 const mockTermFocus = vi.fn();
+const mockPromptObserverDispose = vi.fn();
+const mockPromptWriteParsed = vi.fn(() => ({ dispose: mockPromptObserverDispose }));
 const mockTermOptions: Record<string, unknown> = {};
 
 vi.mock("@xterm/xterm", () => {
@@ -50,7 +52,14 @@ vi.mock("@xterm/xterm", () => {
     onData = mockTermOnData;
     focus = mockTermFocus;
     registerLinkProvider = vi.fn();
-    buffer = { active: { getLine: vi.fn() } };
+    // Real xterm event contracts return independently disposable subscriptions.
+    onWriteParsed = mockPromptWriteParsed;
+    onResize = vi.fn(() => ({ dispose: vi.fn() }));
+    onRender = vi.fn(() => ({ dispose: vi.fn() }));
+    buffer = {
+      active: { type: "normal", length: 0, baseY: 0, cursorY: 0, viewportY: 0, getLine: vi.fn() },
+      onBufferChange: vi.fn(() => ({ dispose: vi.fn() })),
+    };
   }
   return { Terminal: MockTerminal };
 });
@@ -175,6 +184,20 @@ describe("TerminalView integration", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("suspends prompt-buffer observation when the mounted terminal becomes hidden", async () => {
+    const view = renderTerminal({ sessionType: "claude" });
+    await flushAsync();
+    expect(mockPromptWriteParsed).toHaveBeenCalled();
+    mockPromptObserverDispose.mockClear();
+    view.rerender(createElement(TerminalView, {
+      sessionId: "sess-1", projectDir: "/home/user/project", sessionType: "claude",
+      active: false, visible: false, searchOpen: false, onSearchClose: vi.fn(),
+    }));
+    await flushAsync();
+    expect(mockPromptObserverDispose).toHaveBeenCalledOnce();
+    expect(mockTermDispose).not.toHaveBeenCalled();
   });
 
   describe("PTY spawn", () => {

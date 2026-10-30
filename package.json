@@ -14,6 +14,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "test:native-observation": "cargo test --manifest-path src-tauri/Cargo.toml --locked && vitest run --config vitest.native.config.ts",
     "lint": "tsc --noEmit",
     "test:release": "python3 -m unittest discover -s scripts -p 'test_release.py' -v",
     "test:e2e": "wdio run wdio.conf.ts",

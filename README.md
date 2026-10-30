@@ -39,11 +39,11 @@ Orbit wraps the Claude Code CLI in a Tauri desktop app. Keep several projects an
 - **Projects and sessions** — a global sidebar, multiple Claude sessions and plain terminals per project, pinned sessions, and navigation without terminating visited sessions.
 - **Workspace persistence** — save projects, session metadata, terminal scrollback and Claude conversation references for restoration. Restarting Orbit does not preserve the original OS processes; plain terminals start a new shell.
 - **Supervision** — filter sessions across projects by observed activity or requests for attention, with explicit unknown and stopped states.
-- **Observed subagents** — see Claude subagent start/stop observations under their owning session. An observed stop is not proof of task success.
+- **Native session state** — read activity from Claude Code's official JSON interface. Detailed nested-subagent events are not exposed by that interface and are not reconstructed or guessed.
 - **Read-only previews** — a collapsible, resizable panel for web pages, Markdown, source/text files and raster images. Browse registered project files or select an exact file through the native picker.
-- **Terminal tools** — search, zoom and prompt navigation without replacing the Claude terminal. Session titles are derived locally without an additional model request.
+- **Terminal tools** — search, zoom and a compact prompt rail: hover or focus for a first-line preview, click to scroll to its rendered terminal marker. Markers are best-effort anchors in retained scrollback (up to 48 entries from the last 6,000 rows), not a reconstructed conversation history. Session titles are derived locally without an additional model request.
 - **Themes** — nine palettes applied to the app chrome, terminals and local preview surfaces, including preference previews and cancellation. External websites, images and native OS dialogs retain their own appearance.
-- **Notifications** — report observed requests for attention and completion, including deferred parent completion while known subagents are still active. Disabling notifications does not disable observation.
+- **Notifications** — report observed requests for attention and return to idle. A failed read, missing session or stopped process does not become a successful completion. Disabling notifications does not disable observation.
 - **Explicit permission modes** — normal Claude permissions remain available; bypass-permission mode is an explicit user choice. Orbit does not automatically approve requests.
 - **Update checks** — the 1.2.1 source checks at startup, periodically every six hours, and when the app becomes visible again if a check is due, subject to update preferences. No forced restart.
 
@@ -51,13 +51,13 @@ Orbit wraps the Claude Code CLI in a Tauri desktop app. Keep several projects an
 
 ### Native terminals and observation
 
-React and xterm.js display real PTY sessions managed by the Rust backend. Session activity comes from **official Claude Code hooks**, not inference from terminal output.
+React and xterm.js display real PTY sessions managed by the Rust backend. Orbit reads **`claude agents --json --all`**, the [official external session-state interface](https://code.claude.com/docs/en/agent-view#read-session-state-from-a-script), instead of inferring activity from terminal output.
 
-Orbit installs observation hooks in each project's `.claude/settings.local.json`, preserving unrelated settings. The hook producer atomically writes small per-conversation and per-subagent `~/.orbit/session-*.json` observations. No prompt bodies or tool results are needed for this telemetry. Hook-configuration failures are visible in Supervision with a retry action.
+Entries are matched to Orbit's Claude conversation IDs, not guessed from directory names. Live interactive sessions expose `busy`, `waiting` or `idle`, with an optional reason for waiting. Background sessions additionally expose states such as `working`, `blocked`, `done`, `failed` and `stopped`. Missing entries, unsupported CLI versions and failed reads leave state unknown; process lifecycle is still tracked by Orbit's PTY backend.
 
-Observation is scoped to the current execution, not a complete replay log. A very short subagent may first be observed after it stops; a disconnected or stopped process is not reported as successfully completed. Claude's full conversation and approval prompts remain in the terminal.
+Orbit does not add hooks or a custom status line, and ordinary startup and observation do not modify Claude configuration. Legacy Orbit hooks can be cleaned up separately after a configuration backup; there is no configuration-writing migration in the application. Personal hooks and unrelated settings must be preserved. Prompt bodies and tool results are not needed for session-state polling. Claude's conversation and approval prompts remain in the terminal.
 
-An optional status-line integration can create `~/.claude/statusline.sh`; it is separate from project-local observation hooks.
+The JSON interface does not expose detailed nested-subagent start/stop events. Orbit does not claim to reproduce that roster without an authoritative source. An idle interactive prompt means the turn ended, not that the requested business task succeeded.
 
 ### Preview boundaries
 
@@ -85,7 +85,7 @@ Check [GitHub Releases](https://github.com/imadAttar/orbit/releases) for publish
 
 ### Prerequisite for using Orbit
 
-Install and authenticate the [Claude Code CLI](https://code.claude.com/docs/en/setup). Orbit is a wrapper, not a bundled replacement for Claude Code or its account/subscription.
+Install and authenticate the [Claude Code CLI](https://code.claude.com/docs/en/setup). Native session observation requires a CLI exposing `claude agents --json --all` (verified with 2.1.314); otherwise observation is unavailable rather than estimated. Orbit is a wrapper, not a bundled replacement for Claude Code or its account/subscription.
 
 ## Development
 
@@ -100,6 +100,7 @@ npm test                       # Frontend unit/integration tests
 npm run lint                   # TypeScript checking (not ESLint)
 npm run build                  # Build web assets only, not a native installer
 npm run test:release            # Release helper regression tests
+npm run test:native-observation # macOS/Linux: Rust producer → frontend interop (native prerequisites)
 
 cargo test --manifest-path src-tauri/Cargo.toml --locked
 cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
@@ -127,9 +128,9 @@ src/                         React + TypeScript
 
 src-tauri/src/               Rust backend
   pty.rs                     PTY lifecycle and bounded input delivery
-  claude.rs                  Claude CLI integration and observation hooks
+  claude.rs                  Claude CLI discovery and local session titles
   preview.rs                 Scoped read-only files and preview commands
-  watcher.rs                 Filesystem observation
+  claude_sessions.rs         Bounded, read-only official JSON observation
   terminal.rs                Editor integration and scrollback
 
 scripts/release.py           Release asset collection and verification

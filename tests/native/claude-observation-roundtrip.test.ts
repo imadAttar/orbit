@@ -1,0 +1,51 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
+vi.mock("../../src/core/persistence", () => ({ loadData: vi.fn().mockResolvedValue(null), debouncedSave: vi.fn() }));
+vi.mock("../../src/core/api", () => ({ pty: { killSilent: vi.fn() }, scrollback: { clear: vi.fn() }, terminal: { notifyDone: vi.fn() }, listen: vi.fn() }));
+import { useStore } from "../../src/core/store";
+import { listen, terminal } from "../../src/core/api";
+import { buildSupervision } from "../../src/core/supervision";
+let home: string | undefined;
+afterEach(() => { if (home) rmSync(home, { recursive: true, force: true }); });
+it("runs the actual native JSON producer against an isolated CLI fixture and feeds its sanitized snapshots to the real store", async () => {
+  home = mkdtempSync(join(tmpdir(), "orbit-native-roundtrip-"));
+  // Compile the real producer unchanged, excluding only the Tauri window/IPC adapter.
+  // Existing Cargo-built serde dependencies keep this offline and avoid launching the app.
+  const deps = join(process.cwd(), "src-tauri/target/debug/deps");
+  const serde = readdirSync(deps).find((name) => /^libserde_json-.*\.rlib$/.test(name));
+  expect(serde, "native serde_json dependency must be built before integration tests").toBeTruthy();
+  const native = readFileSync(join(process.cwd(), "src-tauri/src/claude_sessions.rs"), "utf8").split("fn local_main(")[0];
+  const source = join(home, "producer.rs");
+  const binary = join(home, "producer");
+  writeFileSync(source, native + '\nfn main() { let arg = std::env::args().nth(1).unwrap(); println!("{}", snapshot_from_path(Some(Path::new(&arg)))); }\n');
+  const built = spawnSync("rustc", ["--edition=2021", source, "-L", `dependency=${deps}`, "--extern", `serde_json=${join(deps, serde!)}`, "-o", binary], { encoding: "utf8", timeout: 30000 });
+  expect(built.status, built.stderr).toBe(0);
+  const fixture = join(home, "claude");
+  writeFileSync(fixture, '#!/usr/bin/env python3\nimport json, os, sys\nassert sys.argv[1:] == ["agents", "--json", "--all"]\nwith open(os.path.join(os.environ["HOME"], "entries.json")) as f: print(json.dumps(json.load(f)))\n');
+  chmodSync(fixture, 0o700);
+  await useStore.getState().init();
+  expect(listen).not.toHaveBeenCalledWith("session-state-changed", expect.any(Function));
+  useStore.setState({ activePid: "p", activeSid: "elsewhere", sessionRuntimeStartedAt: {}, projects: [{ id: "p", name: "Fixture", dir: home, sessions: [{ id: "s", name: "Parent", claudeSessionId: "roundtrip", runtimeStatus: "running" }] }], sessionStates: {}, sessionSubagents: {}, settings: { ...useStore.getState().settings, autoNotifications: true } });
+  const run = (entries: object[]) => {
+    writeFileSync(join(home!, "entries.json"), JSON.stringify(entries));
+    const result = spawnSync(binary, [fixture], { cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8", timeout: 5000 });
+    expect(result.status, result.stderr).toBe(0);
+    const snapshot = JSON.parse(result.stdout);
+    expect(snapshot.available).toBe(true);
+    expect(result.stdout).not.toContain("private title");
+    useStore.getState().applyClaudeSnapshot(snapshot, useStore.getState().captureObservationTargets());
+    const state = useStore.getState();
+    return buildSupervision(state.projects, state.sessionStates, state.sessionTools, state.sessionSubagents)[0].status;
+  };
+  const entry = { sessionId: "roundtrip", kind: "interactive", pid: 123, title: "private title", cwd: "/private" };
+  expect(run([{ ...entry, status: "busy" }])).toBe("working");
+  expect(run([{ ...entry, status: "waiting", waitingFor: "permission" }])).toBe("waiting");
+  expect(run([{ ...entry, status: "idle" }])).toBe("unread");
+  run([{ ...entry, status: "idle" }]);
+  expect(terminal.notifyDone).toHaveBeenCalledOnce();
+  expect(run([{ kind: "interactive", pid: 456, status: "busy" }])).toBe("unknown");
+  expect(useStore.getState().projects[0].sessions[0].runtimeStatus).toBe("running");
+}, 40000);

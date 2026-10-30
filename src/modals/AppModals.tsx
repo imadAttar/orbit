@@ -1,35 +1,9 @@
 import { useState } from "react";
 import type { Session } from "../core/types";
-import { useStore } from "../core/store";
-import { claude, statusline } from "../core/api";
+import { claude } from "../core/api";
 import { trackEvent } from "../lib/analytics";
 import { useT } from "../i18n/i18n";
 import FocusTrap from "../shared/FocusTrap";
-
-// --- Statusline Prompt ---
-
-export function StatuslineModal({ onClose }: { onClose: () => void }) {
-  const t = useT();
-  const dismiss = () => { onClose(); useStore.getState().setStatuslineAsked(); };
-  return (
-    <div className="modal-overlay" role="presentation" onClick={dismiss} onKeyDown={(e) => { if (e.key === "Escape") dismiss(); }}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-        <FocusTrap onEscape={dismiss}>
-        <div className="modal__title">{t("statusline.title")}</div>
-        <div className="modal__body">{t("statusline.message")}</div>
-        <div className="modal__hint">{t("statusline.hint")}</div>
-        <div className="modal__actions">
-          <button className="modal__btn--secondary" onClick={dismiss}>{t("statusline.decline")}</button>
-          <button className="modal__btn--primary" onClick={async () => {
-            try { await statusline.create(); trackEvent("statusline_created"); } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("statusline", `creation failed: ${err}`)); }
-            dismiss();
-          }}>{t("statusline.install")}</button>
-        </div>
-        </FocusTrap>
-      </div>
-    </div>
-  );
-}
 
 // --- Delete Session Confirm ---
 

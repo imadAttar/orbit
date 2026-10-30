@@ -66,6 +66,8 @@ export const pty = {
 // === Claude Integration ===
 
 export const claude = {
+  sessionsSnapshot: () => call<import("./claudeObservation").ClaudeSessionsSnapshot>("claude_sessions_snapshot"),
+
   isInstalled: () => call<boolean>("check_claude_installed"),
 
   install: () => call<string>("install_claude"),
@@ -76,11 +78,6 @@ export const claude = {
   generateSessionTitle: (transcriptPath: string) =>
     call<string>("generate_session_title", { transcriptPath }),
 
-  enableSessionHooks: (projectDir: string) =>
-    call<boolean>("enable_session_hooks", { projectDir }),
-
-  checkSessionHooks: (projectDir: string) =>
-    call<boolean>("check_session_hooks", { projectDir }),
 };
 
 
@@ -121,13 +118,6 @@ export const orbit = {
 
   collectCrashReport: (errorMessage: string) =>
     call<string>("collect_crash_report", { errorMessage }),
-};
-
-// === Status Line ===
-
-export const statusline = {
-  has: () => call<boolean>("has_statusline"),
-  create: () => call<void>("create_statusline"),
 };
 
 // === Isolated Preview (read-only; native scope validation is authoritative) ===

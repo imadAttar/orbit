@@ -4,6 +4,7 @@ import { trackEvent } from "../../lib/analytics";
 import { useT } from "../../i18n/i18n";
 import { usePTY } from "./hooks/usePTY";
 import { usePromptNav } from "./hooks/usePromptNav";
+import { PromptNavigation } from "./PromptNavigation";
 import { useTerminalSearch } from "./hooks/useTerminalSearch";
 import { useTerminalRestore } from "./hooks/useTerminalRestore";
 import { useTerminalThemeSync } from "../../hooks/useThemeSync";
@@ -69,9 +70,8 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
 
   // Prompt navigation uses a forwarded ref synced from usePTY
   const ptyTermRef = useRef<import("@xterm/xterm").Terminal | null>(null);
-  const { jumpToPrompt, jumpRef } = usePromptNav(ptyTermRef);
-
   const isTerminalSession = sessionType === "terminal";
+  const { previews, jumpToPreview, jumpToPrompt, jumpRef, focusTerminal } = usePromptNav(ptyTermRef, !isTerminalSession && Boolean(isVisible));
 
   // --- PTY lifecycle hook ---
   const ptyResult = usePTY({
@@ -246,18 +246,20 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
           />
           <button className="search-bar__btn" onClick={doSearchPrev} title={t("common.previous")}>&#x25B2;</button>
           <button className="search-bar__btn" onClick={doSearchNext} title={t("common.next")}>&#x25BC;</button>
-          <span className="search-bar__sep" />
-          <button className="search-bar__btn" onClick={() => { jumpToPrompt("prev"); trackEvent("prompt_nav", { direction: "prev" }); }} title={t("nav.prevPrompt")}>&#x23F6;</button>
-          <button className="search-bar__btn" onClick={() => { jumpToPrompt("next"); trackEvent("prompt_nav", { direction: "next" }); }} title={t("nav.nextPrompt")}>&#x23F7;</button>
+          {!isTerminalSession && <>
+            <span className="search-bar__sep" />
+            <button className="search-bar__btn" onClick={() => { jumpToPrompt("prev"); trackEvent("prompt_nav", { direction: "prev" }); }} title={t("nav.prevPrompt")}>&#x23F6;</button>
+            <button className="search-bar__btn" onClick={() => { jumpToPrompt("next"); trackEvent("prompt_nav", { direction: "next" }); }} title={t("nav.nextPrompt")}>&#x23F7;</button>
+          </>}
           <button className="search-bar__btn" onClick={onSearchClose} title={t("common.close")}>&#x2715;</button>
         </div>
       )}
-      {/* Prompt navigation — floating mini-nav */}
-      {ts.spawned && !searchOpen && !ts.inputFailed && (
-        <div className="prompt-nav">
-          <button className="prompt-nav__btn" onClick={() => { jumpToPrompt("prev"); trackEvent("prompt_nav", { direction: "prev" }); }} title={t("nav.prevPrompt")}>&#x25B2;</button>
-          <button className="prompt-nav__btn" onClick={() => { jumpToPrompt("next"); trackEvent("prompt_nav", { direction: "next" }); }} title={t("nav.nextPrompt")}>&#x25BC;</button>
-        </div>
+      {/* Read-only rendered-buffer markers — never a reconstructed conversation. */}
+      {!isTerminalSession && ts.spawned && !searchOpen && !ts.inputFailed && (
+        <PromptNavigation entries={previews} label={t("nav.promptMarkers")} hint={t("nav.promptPreviewHint")} previousLabel={t("nav.prevPrompt")} nextLabel={t("nav.nextPrompt")}
+          onPrevious={() => { jumpToPrompt("prev"); trackEvent("prompt_nav", { direction: "prev" }); }}
+          onNext={() => { jumpToPrompt("next"); trackEvent("prompt_nav", { direction: "next" }); }}
+          onSelect={jumpToPreview} onEscape={focusTerminal} />
       )}
       <div ref={containerRef} className="terminal-container" />
       {/* Mode toggle button — Claude sessions only */}
