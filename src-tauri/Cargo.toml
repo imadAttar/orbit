@@ -2,7 +2,7 @@
 name = "orbit"
 version = "1.2.1"
 edition = "2021"
-license = "AGPL-3.0-only"
+license = "MIT"
 
 [lib]
 name = "orbit_lib"

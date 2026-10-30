@@ -107,4 +107,4 @@ Contributions welcome. Please [open an issue](https://github.com/imadAttar/orbit
 
 ## License
 
-[AGPL-3.0](LICENSE)
+[MIT](LICENSE). Third-party dependencies retain their respective licenses.
