@@ -41,7 +41,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked
 cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 actionlint .github/workflows/build.yml .github/workflows/release.yml
-python3 scripts/release.py check-version --tag v1.2.0
+python3 scripts/release.py check-version --tag v1.2.1
 ```
 
 Synchronize versions in package.json, both package-lock root entries, Cargo.toml, Orbit's Cargo.lock entry and tauri.conf.json before tagging. Review the exact staged files and retain source attribution/license. No temporary workspace data, credentials, screenshots of personal work or unreviewed sketches should enter the release commit.
@@ -51,9 +51,9 @@ Synchronize versions in package.json, both package-lock root entries, Cargo.toml
 Download into a new empty scratch directory and validate the actual bytes:
 
 ```sh
-gh release view v1.2.0 -R imadAttar/orbit --json isDraft,assets,targetCommitish
-gh release download v1.2.0 -R imadAttar/orbit --dir "$QA_DIR"
-python3 scripts/release.py verify --output "$QA_DIR" --tag v1.2.0 --repo imadAttar/orbit --platforms macos-arm64
+gh release view v1.2.1 -R imadAttar/orbit --json isDraft,assets,targetCommitish
+gh release download v1.2.1 -R imadAttar/orbit --dir "$QA_DIR"
+python3 scripts/release.py verify --output "$QA_DIR" --tag v1.2.1 --repo imadAttar/orbit --platforms macos-arm64
 ```
 
 Check that Actions succeeded on the exact tag commit, verify the DMG/application version and ARM64 architecture, and read the changelog/signing warning. The helper rejects missing, extra or orphan assets, bad signatures, wrong versions/platforms/architectures/URLs and incomplete/tampered checksums.
