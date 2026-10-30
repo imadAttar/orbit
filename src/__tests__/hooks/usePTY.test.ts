@@ -60,6 +60,67 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const ready = async () => { await vi.waitFor(() => expect(mocks.onData).toBeTypeOf("function")); };
 
 describe("usePTY input", () => {
+  it("ignores screenshot SGR mouse movement plus Enter without changing forwarded bytes", async () => {
+    mount(); await ready();
+    const chunks = ["\x1b[<35;189;7M\x1b[<35;181;10M\x1b[<35;177;11M", "\r"];
+    chunks.forEach(data => mocks.onData!(data));
+    expect(mocks.write.mock.calls).toEqual(chunks.map(data => ["s1", data]));
+    expect(mocks.generateTitle).not.toHaveBeenCalled();
+    expect(mocks.mark).not.toHaveBeenCalled();
+  });
+  it("keeps fragmented mouse reports out of a real inputtypedtest title", async () => {
+    mount(); await ready();
+    const chunks = ["\x1b", "[<35;189;", "7M", "\x1b[<35;181;10", "M", "inputtypedtest", "\r"];
+    chunks.forEach(data => mocks.onData!(data));
+    expect(mocks.write.mock.calls).toEqual(chunks.map(data => ["s1", data]));
+    expect(mocks.generateTitle).toHaveBeenCalledExactlyOnceWith("inputtypedtest");
+    expect(mocks.mark).toHaveBeenCalledExactlyOnceWith("s1");
+  });
+  it.each([
+    ["\x1b", "[<35;189;7", "M", "\r"],
+    ["\x1b[A", "\x1bO", "A", "\x1b[12;34R", "\x1b]0;hidden", "\x07", "\r"],
+    ["\x1bPcontrol response", "\x1b", "\\", "\r"],
+  ])("never marks report-only input while forwarding each original chunk: %j", async (...chunks) => {
+    mount(); await ready();
+    chunks.forEach(data => mocks.onData!(data));
+    expect(mocks.write.mock.calls).toEqual(chunks.map(data => ["s1", data]));
+    expect(mocks.generateTitle).not.toHaveBeenCalled();
+    expect(mocks.mark).not.toHaveBeenCalled();
+  });
+  it("forwards fragmented bracketed paste unchanged and titles only its text after Enter", async () => {
+    mount(); await ready();
+    const chunks = ["\x1b[20", "0~input", "\n", "typedtest", "\x1b[201", "~"];
+    chunks.forEach(data => mocks.onData!(data));
+    expect(mocks.generateTitle).not.toHaveBeenCalled();
+    expect(mocks.mark).not.toHaveBeenCalled();
+    mocks.onData!("\r");
+    expect(mocks.write.mock.calls).toEqual([...chunks, "\r"].map(data => ["s1", data]));
+    expect(mocks.generateTitle).toHaveBeenCalledExactlyOnceWith("input\ntypedtest");
+    expect(mocks.mark).toHaveBeenCalledExactlyOnceWith("s1");
+  });
+  it.each(["unmount", "generation", "rename", "exit"])("rejects a late generated title after %s", async (fence) => {
+    let resolve!: (title: string) => void;
+    mocks.generateTitle.mockReturnValueOnce(new Promise<string>(r => { resolve = r; }));
+    const options = { generation: 0 };
+    const view = mount(options); await ready();
+    const oldData = mocks.onData!;
+    oldData("inputtypedtest"); oldData("\r");
+    if (fence === "unmount") view.unmount();
+    if (fence === "generation") { options.generation++; view.rerender(); }
+    if (fence === "rename") mocks.state.projects[0].sessions[0].name = "User title";
+    if (fence === "exit") {
+      const exit = mocks.listen.mock.calls.find(([event]) => event === "pty-exit")![1];
+      exit({ session_id: "s1", generation_id: mocks.spawn.mock.calls[0][0].generationId, exit_code: 0 });
+    }
+    mocks.write.mockClear();
+    if (fence !== "rename") {
+      oldData("\x1b[<35;189;7M");
+      expect(mocks.write).not.toHaveBeenCalled();
+    }
+    resolve("Late title");
+    await Promise.resolve();
+    expect(mocks.rename).not.toHaveBeenCalled();
+  });
   it("reports worker failures only for the current session generation and disposes the listener", async () => {
     const onInputError = vi.fn();
     const stop = vi.fn();
@@ -100,6 +161,7 @@ describe("usePTY input", () => {
     unmount();
     expect(mocks.track.mock.calls.map(([name]) => name)).not.toContain("prompt_sent");
     expect(mocks.mark).not.toHaveBeenCalled();
+    expect(mocks.generateTitle).not.toHaveBeenCalled();
   });
   it("continues buffering meaningful input after title generation", async () => {
     mount(); await ready();
