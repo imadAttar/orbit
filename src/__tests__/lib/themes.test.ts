@@ -73,6 +73,33 @@ describe("themes", () => {
   }
 });
 
+describe("applyChrome complete palette", () => {
+  for (const [name, theme] of Object.entries(THEMES)) {
+    it(`${name} updates raised surfaces and border highlights at the document root`, () => {
+      applyChrome(theme);
+      const style = document.documentElement.style;
+      expect(style.getPropertyValue("--surface")).toBe(theme.terminal.background);
+      expect(style.getPropertyValue("--border-bright")).toBe(theme.terminal.selectionBackground);
+      expect(style.getPropertyValue("--terminal-bg")).toBe(theme.terminal.background);
+      expect(style.getPropertyValue("--terminal-fg")).toBe(theme.terminal.foreground);
+    });
+  }
+});
+
+describe("applyChrome derived UI colors", () => {
+  for (const [name, theme] of Object.entries(THEMES)) {
+    it(`${name} derives status tints and native control appearance from its palette`, () => {
+      applyChrome(theme);
+      const style = document.documentElement.style;
+      for (const key of ["green", "yellow", "danger"]) {
+        expect(style.getPropertyValue(`--${key}-dim`)).toBe(`rgba(var(--${key}-rgb), 0.1)`);
+      }
+      expect(style.colorScheme).toBe(name === "orbit-light" ? "light" : "dark");
+      expect(style.getPropertyValue("--highlight-subtle")).toBe("color-mix(in srgb, var(--text) 6%, transparent)");
+    });
+  }
+});
+
 describe("applyChrome", () => {
   it("sets CSS custom properties on documentElement", () => {
     const theme = THEMES["dracula"];

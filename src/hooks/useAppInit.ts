@@ -9,7 +9,7 @@ import type { UpdateStatus } from "../features/updater";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function useAppInit(dispatch: (action: any) => void) {
   const init = useStore((s) => s.init);
-  const initialization = useRef<Promise<void> | null>(null);
+  const initialization = useRef<{ action: typeof init; promise: Promise<void> } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -19,8 +19,10 @@ export function useAppInit(dispatch: (action: any) => void) {
         setAnalyticsEnabled(state.settings.analytics);
       }
     });
-    initialization.current ??= init();
-    initialization.current.then(async () => {
+    if (initialization.current?.action !== init) {
+      initialization.current = { action: init, promise: useStore.getState().loaded ? Promise.resolve() : init() };
+    }
+    initialization.current.promise.then(async () => {
       if (cancelled) return;
       consentReady = true;
       const s = useStore.getState().settings;
@@ -38,11 +40,9 @@ export function useAppInit(dispatch: (action: any) => void) {
         autoUpdate: s.autoUpdate ? 1 : 0,
       });
       initUpdater();
-      // Auto-enable session hooks on all existing projects if setting is on
-      if (s.autoNotifications) {
-        for (const p of state.projects) {
-          claude.enableSessionHooks(p.dir).catch(() => {});
-        }
+      // Telemetry is independent of desktop notification preferences.
+      for (const p of state.projects) {
+        void state.enableProjectHooks(p.id);
       }
       const checkInstalled = claude.isInstalled().catch(() => true);
       const checkStatusline = !s.statuslineAsked && !isWindows

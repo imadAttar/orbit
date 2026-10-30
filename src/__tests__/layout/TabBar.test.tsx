@@ -56,6 +56,19 @@ describe("TabBar", () => {
     expect(getByText("Beta")).toBeTruthy();
   });
 
+  it.each([false, true])("shows project activity regardless of session order (reversed=%s)", (reversed) => {
+    const sessions = [
+      { id: "s1", name: "Waiting", claudeSessionId: "c1" },
+      { id: "s2", name: "Working", claudeSessionId: "c2" },
+    ];
+    setupStore({
+      projects: [{ id: "p1", name: "Alpha", dir: "/tmp/alpha", sessions: reversed ? [...sessions].reverse() : sessions }],
+      sessionStates: { c1: "waiting", c2: "working" },
+    });
+    const { container } = render(<TabBar {...handlers} />);
+    expect(container.querySelector(".tab__indicator--working")).not.toBeNull();
+  });
+
   it("click on tab updates store activePid", () => {
     const { container } = render(<TabBar {...handlers} />);
     const tabs = container.querySelectorAll(".tab");

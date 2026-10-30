@@ -89,7 +89,7 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-overlay" role="presentation" onClick={handleCancel} onKeyDown={(e) => { if (e.key === "Escape") handleCancel(); }}>
       <div className="prefs" role="dialog" aria-modal="true" data-testid="preferences-modal" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-        <FocusTrap>
+        <FocusTrap onEscape={handleCancel}>
         <nav className="prefs__nav">
           <div className="prefs__nav-title">{t("prefs.title")}</div>
           {tabs.map((tab) => (

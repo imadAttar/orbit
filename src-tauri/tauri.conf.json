@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicknisi/tauri-v2-schema/refs/heads/main/schema.json",
   "productName": "Orbit",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "identifier": "com.orbit.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -40,7 +40,7 @@
   "app": {
     "withGlobalTauri": false,
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://eu.aptabase.com https://github.com https://raw.githubusercontent.com; img-src 'self' asset: https://asset.localhost; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
+      "csp": "default-src 'self'; connect-src 'self' https://eu.aptabase.com https://github.com https://raw.githubusercontent.com; img-src 'self' asset: https://asset.localhost data:; frame-src http: https:; frame-ancestors 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
     },
     "windows": [
       {

@@ -405,6 +405,11 @@ export function applyChrome(theme: AppTheme) {
   const r = document.documentElement.style;
   const c = theme.chrome;
   r.setProperty("--bg", c.bg);
+  // Raised UI and native/portal surfaces must follow the selected palette too.
+  r.setProperty("--surface", theme.terminal.background ?? c.sidebarBg);
+  r.setProperty("--border-bright", theme.terminal.selectionBackground ?? c.border);
+  r.setProperty("--terminal-bg", theme.terminal.background ?? c.codeBg);
+  r.setProperty("--terminal-fg", theme.terminal.foreground ?? c.text);
   r.setProperty("--sidebar-bg", c.sidebarBg);
   r.setProperty("--border", c.border);
   r.setProperty("--accent", c.accent);
@@ -434,8 +439,16 @@ export function applyChrome(theme: AppTheme) {
   if (greenRgb) r.setProperty("--green-rgb", greenRgb);
   const yellowRgb = toRgb(c.yellow);
   if (yellowRgb) r.setProperty("--yellow-rgb", yellowRgb);
+  for (const key of ["green", "yellow", "danger"]) {
+    r.setProperty(`--${key}-dim`, `rgba(var(--${key}-rgb), 0.1)`);
+  }
+  r.setProperty("--highlight-subtle", "color-mix(in srgb, var(--text) 6%, transparent)");
+  // Inform native selects/scrollbars without filtering embedded websites or images.
+  const channels = c.bg.slice(1).match(/../g)!.map((v) => parseInt(v, 16) / 255);
+  const linear = channels.map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  r.colorScheme = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722 > 0.179 ? "light" : "dark";
   // Derived dim/glow vars that depend on accent-rgb
   r.setProperty("--accent-glow", `rgba(${accentRgb}, 0.15)`);
   r.setProperty("--accent-dim", `rgba(${accentRgb}, 0.06)`);
-  r.setProperty("--session-active", c.sessionActive);
+  window.dispatchEvent(new CustomEvent<AppTheme>("orbit:theme-applied", { detail: theme }));
 }

@@ -6,7 +6,7 @@ import { pty, scrollback } from "../../core/api";
 import { debouncedSave } from "../../core/persistence";
 beforeEach(() => {
   vi.clearAllMocks();
-  useStore.setState({ ...useStore.getInitialState(), projects: [
+  useStore.setState({ ...useStore.getInitialState(), loaded: true, projects: [
     { id: "a", name: "A", dir: "/a", sessions: [{ id: "a1", name: "main", unread: true }, { id: "a2", name: "result", unread: true }, { id: "archived", name: "old", archivedAt: 0 }] },
     { id: "b", name: "B", dir: "/b", sessions: [{ id: "b1", name: "main" }] },
   ], activePid: "b", activeSid: "b1", projectSessions: { a: "a2", b: "b1" } }, true);

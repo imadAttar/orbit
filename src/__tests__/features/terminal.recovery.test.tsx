@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 vi.mock("../../core/persistence", () => ({ loadData: vi.fn(), debouncedSave: vi.fn() }));
 vi.mock("../../core/api", () => ({ scrollback: { load: vi.fn().mockResolvedValue(null), clear: vi.fn() }, listen: vi.fn(), pty: { killSilent: vi.fn() } }));
 const { hook } = vi.hoisted(() => ({ hook: vi.fn() }));
@@ -12,6 +12,15 @@ beforeEach(() => {
  useStore.setState({ activePid: "p", activeSid: "s", sessionStates: {}, projects: [{ id: "p", name: "P", dir: "/tmp/p", sessions: [{ id: "s", name: "Failed", claudeSessionId: "old", hasConversation: true, runtimeStatus: "failed", failureReason: "resume" }] }] });
 });
 afterEach(cleanup);
+it("shows a dismissible warning when terminal input is rejected without stopping the session", async () => {
+ render(<I18nProvider language="fr"><TerminalView sessionId="s" projectDir="/tmp/p" active searchOpen={false} onSearchClose={() => {}} /></I18nProvider>);
+ await screen.findByText("Reprise échouée");
+ act(() => hook.mock.lastCall?.[0].onInputError?.());
+ expect(screen.getByRole("alert").textContent).toContain("texte");
+ fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
+ expect(screen.queryByRole("alert")).toBeNull();
+ expect(useStore.getState().projects[0].sessions[0].claudeSessionId).toBe("old");
+});
 it.each(["normal", "yolo"] as const)("retries the existing conversation with resolved %s mode", async (defaultMode) => {
  useStore.setState({ settings: { ...useStore.getState().settings, defaultMode } });
  render(<I18nProvider language="fr"><TerminalView sessionId="s" projectDir="/tmp/p" active searchOpen={false} onSearchClose={() => {}} /></I18nProvider>);

@@ -1,5 +1,6 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { isWindows } from "../../../lib/platform";
+import { hasAppModifier, isAppShortcut } from "../../../lib/shortcuts";
 
 export type JumpDirection = "prev" | "next";
 
@@ -16,6 +17,7 @@ export type TerminalKeyHandlerDeps = {
   writeText: (text: string) => Promise<void>;
   /** Tauri clipboard-manager readText (Windows Ctrl+V paste branch — Task 5). */
   readText: () => Promise<string | null>;
+  onInputError?: () => void;
 };
 
 /**
@@ -28,24 +30,17 @@ export type TerminalKeyHandlerDeps = {
 export function createTerminalKeyEventHandler(
   deps: TerminalKeyHandlerDeps,
 ): (e: KeyboardEvent) => boolean {
-  const { sid, term, pty, jumpPrompt, writeText, readText } = deps;
+  const { sid, term, pty, jumpPrompt, writeText, readText, onInputError } = deps;
 
   return (e: KeyboardEvent): boolean => {
-    // The application-level handler opens a terminal session. Block xterm from
-    // also forwarding Ctrl+T (\x14) to the active PTY, but keep propagation so
-    // the window listener can create the session.
-    if (
-      (e.metaKey || e.ctrlKey) &&
-      !e.shiftKey &&
-      !e.altKey &&
-      e.key.toLowerCase() === "t"
-    ) {
-      e.preventDefault();
-      return false;
-    }
+    // Keep application shortcuts out of the PTY, but bubble to Orbit. Only
+    // the window handler prevents browser defaults, so it can distinguish a
+    // shortcut from a key another control already handled.
+    if (isAppShortcut(e)) return false;
 
-    // Prompt navigation: Cmd/Ctrl + ArrowUp/ArrowDown
-    if ((e.metaKey || e.ctrlKey) && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+    // Scrollback navigation is a UI action; preserve native Control on macOS.
+    if (hasAppModifier(e) && !e.shiftKey && !e.altKey && !e.isComposing &&
+        (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();
       e.stopPropagation();
       jumpPrompt(e.key === "ArrowUp" ? "prev" : "next");
@@ -89,8 +84,9 @@ export function createTerminalKeyEventHandler(
             await pty.write(sid, text);
           }
         } catch (err) {
+          onInputError?.();
           const { logger } = await import("../../../lib/logger");
-          logger.warn("clipboard", `readText failed: ${err}`);
+          logger.warn("clipboard", `Paste failed: ${err}`);
         }
       })();
       return false;

@@ -1,0 +1,145 @@
+/* Compact Mac-first chrome. No terminal font overrides. Shared tokens live at
+ * the document root so body portals inherit the same palette and UI density. */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ui-line: color-mix(in srgb, var(--text) 11%, transparent);
+  --ui-muted: color-mix(in srgb, var(--text) 74%, var(--text-dim));
+  --ui-selection: color-mix(in srgb, var(--text) 12%, transparent);
+}
+.app {
+  font-family: var(--font-ui);
+  font-weight: 400;
+}
+
+/* Navigation: regular list rows, not a stack of outlined controls. */
+.app .sidebar { font-family: var(--font-ui); border-right: .5px solid var(--ui-line); --navigation-muted: var(--ui-muted); }
+.app .sidebar__brand { height: 44px; padding: 0 16px; gap: 8px; }
+.app .sidebar__brand img { width: 17px; height: 17px; border-radius: 4px; }
+.app .sidebar__brand strong { font-size: 13px; letter-spacing: -.025em; font-weight: 500; }
+.app .sidebar__brand > span { display: none; }
+.app .sidebar__primary { padding: 7px 10px 10px; }
+.app .sidebar .navigation-icon { width: 14px; height: 14px; flex-basis: 14px; stroke-width: 1.35; }
+.app .sidebar__nav { height: 30px; min-height: 30px; padding: 5px 8px; gap: 9px; margin-bottom: 1px; border: 0; border-radius: 4px; font: 400 12.5px/18px var(--font-ui); transition: background-color 110ms, color 110ms; }
+.app .sidebar__nav > .navigation-icon { color: var(--ui-muted); }
+.app .sidebar__nav[aria-pressed="true"] { background: var(--ui-selection); color: var(--text-bright); }
+.app .sidebar__nav[aria-pressed="true"] > .navigation-icon { color: var(--accent); }
+.app .sidebar__nav kbd { border: 0; background: transparent; font: 400 10px/16px var(--font-ui); padding: 0 2px; opacity: .65; }
+.app .sidebar__badge { border-radius: 3px; padding: 1px 5px; font-size: 9px; line-height: 14px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.app .sidebar__scroll { padding: 0 10px 12px; }
+.app .sidebar__search { height: 29px; padding: 5px 8px; gap: 8px; margin: 0 0 14px; border: 0; border-radius: 4px; background: transparent; }
+.app .sidebar__search:hover, .app .sidebar__search:focus-within { background: var(--highlight-subtle); }
+.app .sidebar__search:focus-within { box-shadow: inset 0 0 0 1px var(--ui-line); }
+.app .sidebar__search input { font: 400 11.5px/18px var(--font-ui); text-overflow: ellipsis; }
+.app .sidebar__search input::placeholder { color: var(--ui-muted); opacity: .78; }
+.app .sidebar__section-label { margin: 12px 8px 6px; font-size: 10px; line-height: 15px; letter-spacing: .09em; font-weight: 500; color: var(--ui-muted); }
+.app .sidebar__section-heading { min-height: 29px; }
+.app .sidebar__section-heading > button { margin: 5px 0 0; }
+.app .sidebar__empty { padding: 2px 8px 8px; margin: 0; max-width: none; font: 400 11px/17px var(--font-ui); color: var(--ui-muted); }
+.app .sidebar__project { margin-top: 6px; }
+.app .sidebar__project-header { gap: 2px; min-height: 28px; }
+.app .sidebar__project-name { order: 0; height: 28px; padding: 4px 6px; gap: 7px; border-radius: 4px; }
+.app .sidebar__project-name > .navigation-icon { color: var(--ui-muted); }
+.app .sidebar__project-name > span { font: 400 12.5px/18px var(--font-ui); }
+.app .sidebar__project-name small { font: 400 10px/16px var(--font-ui); color: var(--ui-muted); opacity: .75; }
+.app .sidebar__collapse { order: 1; width: 18px; padding: 3px; opacity: .6; }
+.app .sidebar__collapse .navigation-icon { width: 11px; height: 11px; flex-basis: 11px; }
+.app .sidebar__project-menu { order: 2; }
+.app .sidebar__icon-button { padding: 4px; border-radius: 3px; }
+.app .sidebar__project-sessions { padding-left: 12px; }
+.app .session-item { min-height: 27px; height: 27px; padding: 4px 7px; gap: 8px; margin-bottom: 1px; border: 0; border-radius: 3px; transition: background-color 110ms; }
+.app .session-item--active { background: var(--ui-selection); box-shadow: none; }
+.app .session-item--active::after { display: none; }
+.app .session-item__name { font: 400 12.5px/18px var(--font-ui); }
+.app .session-item--active .session-item__name { font-weight: 400; color: var(--text-bright); }
+.app .session-item__dot { width: 5px; height: 5px; }
+.app .session-item__terminal { width: 11px; height: 13px; }
+.app .session-item__terminal .navigation-icon { width: 11px; height: 11px; flex-basis: 11px; }
+.app .session-item__meta { position: relative; min-width: 35px; justify-content: flex-end; gap: 0; }
+.app .session-item__time { font: 400 10px/16px var(--font-ui); color: var(--ui-muted); opacity: .75; }
+.app .session-item__pin, .app .session-item__menu { position: absolute; top: -1px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 2px; border-radius: 3px; pointer-events: none; }
+.app .session-item__pin { right: 19px; }
+.app .session-item__menu { right: 0; }
+.app .session-item:hover .session-item__time, .app .session-item:focus-within .session-item__time { opacity: 0; pointer-events: none; }
+.app .session-item:hover .session-item__pin, .app .session-item:hover .session-item__menu, .app .session-item:focus-within .session-item__pin, .app .session-item:focus-within .session-item__menu, .app .session-item__pin--active { pointer-events: auto; }
+.app .session-item__meta:has(.session-item__pin--active) .session-item__time { padding-right: 20px; }
+.app .sidebar__more { height: 26px; padding: 4px 7px; font: 400 11px/18px var(--font-ui); }
+.app .sidebar__footer { min-height: 38px; padding: 5px 10px; border-top: .5px solid var(--ui-line); }
+.app .sidebar__footer button { min-height: 26px; padding: 4px 7px; gap: 6px; border-radius: 4px; font: 400 11px/18px var(--font-ui); }
+.app .sidebar button:focus-visible, .app .sidebar input:focus-visible, .app .session-item:focus-visible { outline-width: 1px; outline-offset: -1px; }
+
+/* Narrow working bars share one baseline across terminal and preview. */
+.app .chat__breadcrumb { min-height: 44px; height: 44px; padding: 6px 16px; gap: 9px; background: var(--code-bg); border-bottom: .5px solid var(--ui-line); font: 400 11.5px/18px var(--font-ui); letter-spacing: 0; }
+.app .chat__breadcrumb > span:first-child { color: var(--ui-muted); font-weight: 400; max-width: 25%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .chat__breadcrumb .chat__session-name { color: var(--text-bright); font-weight: 400; }
+.app .chat__breadcrumb .terminal-tools { gap: 6px; }
+.app .chat__breadcrumb .terminal-tools__zoom { padding: 0; border: 0; background: transparent; gap: 0; }
+.app .chat__breadcrumb .terminal-tools__button { width: 25px; height: 25px; border: 0; border-radius: 4px; font: 400 10px/16px var(--font-ui); color: var(--ui-muted); }
+.app .chat__breadcrumb .terminal-tools__button:hover:not(:disabled) { color: var(--text-bright); background: var(--highlight-subtle); }
+.app .chat__breadcrumb .terminal-tools__size { color: var(--ui-muted); font: 400 10px/16px var(--font-ui); min-width: 26px; }
+.app .chat__breadcrumb .preview-toggle { min-height: 25px; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; font: 400 10px/16px var(--font-ui); }
+.app .chat__breadcrumb .preview-toggle:hover, .app .chat__breadcrumb .preview-toggle[aria-pressed="true"] { background: var(--highlight-subtle); }
+.app .chat__breadcrumb .preview-toggle span { font-weight: 400; }
+.app .resize-handle { width: 2px; }
+.app .resize-handle:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); box-shadow: none; }
+.app .session-restore { min-height: 34px; padding: 5px 14px; gap: 8px; background: transparent; border-bottom: .5px solid var(--ui-line); }
+.app .session-restore__text { font: 400 11px/17px var(--font-ui); }
+.app .session-restore__btn { min-height: 24px; padding: 3px 8px; border-color: transparent; border-radius: 4px; font: 400 10px/16px var(--font-ui); }
+.app .session-restore__btn--resume { background: var(--highlight-subtle); border-color: transparent; color: var(--text-bright); }
+.app .session-restore__btn--resume:hover { background: var(--ui-selection); color: var(--text-bright); }
+.app .search-bar { padding: 6px 12px; gap: 4px; border-bottom-color: var(--ui-line); }
+.app .search-bar__input { border-radius: 4px; padding: 4px 8px; }
+.app .search-bar__btn { min-width: 24px; min-height: 24px; border-radius: 3px; }
+.app .status-bar { height: 23px; font: 400 10px/16px var(--font-ui); letter-spacing: 0; border-top: .5px solid var(--ui-line); color: var(--ui-muted); }
+.app .status-bar__cost { text-shadow: none; letter-spacing: 0; }
+.app .status-bar__sep { height: 9px; }
+
+/* Preview chrome: fine dividers, small controls, no presentation-style hero. */
+.app .preview-pane { border-left: .5px solid var(--ui-line); }
+.app .preview-pane__header { height: 44px; min-height: 44px; padding: 0 11px 0 15px; border-bottom: .5px solid var(--ui-line); }
+.app .preview-pane__header strong { font-size: 11.5px; font-weight: 400; }
+.app .preview-pane__header .preview-icon { width: 14px; height: 14px; flex-basis: 14px; }
+.app .preview-tabs { min-height: 34px; padding: 4px 11px; gap: 3px; border-bottom: .5px solid var(--ui-line); }
+.app .preview-tabs button { padding: 5px 9px; border: 0; border-radius: 3px; font-size: 11px; font-weight: 400; }
+.app .preview-tabs button[aria-pressed="true"] { background: var(--highlight-subtle); }
+.app .preview-address { padding: 6px 10px; gap: 2px; border-bottom: .5px solid var(--ui-line); }
+.app .preview-button { width: 25px; height: 25px; flex-basis: 25px; padding: 5px; border-radius: 3px; }
+.app .preview-address input { height: 27px; padding: 4px 7px; border: .5px solid var(--ui-line); border-radius: 4px; font-size: 10.5px; }
+.app .preview-empty { justify-content: flex-start; padding: 36px 22px; gap: 10px; }
+.app .preview-empty > .preview-icon { width: 21px; height: 21px; flex-basis: 21px; margin-bottom: 3px; }
+.app .preview-empty h2 { font-size: 16px; font-weight: 400; letter-spacing: -.02em; }
+.app .preview-empty p { font-size: 11px; line-height: 1.65; max-width: 290px; }
+.app .preview-empty .preview-text-button { font-size: 11px; }
+.app .preview-footnote { padding: 8px 13px; border-top: .5px solid var(--ui-line); font-size: 9px; }
+.app .preview-file-meta { padding: 8px 15px; border-bottom: .5px solid var(--ui-line); font-size: 10px; }
+.app .preview-file-list button { padding: 5px 7px; min-height: 27px; font-size: 11.5px; border-radius: 3px; }
+
+/* Monitoring uses the same restrained type hierarchy as navigation. */
+.app .supervision { padding: 25px clamp(20px, 3vw, 42px); font-family: var(--font-ui); }
+.app .supervision__header { margin-bottom: 22px; }
+.app .supervision__eyebrow { font-size: 10px; color: var(--ui-muted); letter-spacing: .07em; margin-bottom: 8px; }
+.app .supervision h1 { font-size: 21px; font-weight: 500; letter-spacing: -.025em; }
+.app .supervision__header p { margin-top: 7px; font-size: 12px; color: var(--ui-muted); }
+.app .supervision__filters { padding: 2px; gap: 2px; border: .5px solid var(--ui-line); border-radius: 5px; background: transparent; }
+.app .supervision__filters button { padding: 5px 9px; border-radius: 3px; font-size: 11px; }
+.app .supervision__filters button[aria-pressed="true"] { border-color: transparent; background: var(--ui-selection); box-shadow: none; }
+.app .supervision__search { padding: 7px 9px; border-color: var(--ui-line); border-radius: 4px; }
+.app .supervision__search input { font-size: 11px; }
+.app .supervision__columns { padding: 10px 10px; border-bottom-color: var(--ui-line); color: var(--ui-muted); font-size: 10px; letter-spacing: .04em; }
+.app .supervision__row { padding: 13px 10px; border-bottom: .5px solid var(--ui-line); }
+.app .supervision__identity { gap: 5px; }
+.app .supervision__identity strong { font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.app .supervision__project { font-size: 10px; color: var(--ui-muted); }
+.app .supervision__status { width: fit-content; padding: 3px 5px; border-radius: 3px; background: transparent; gap: 6px; font-size: 10px; }
+.app .supervision__observation { font-size: 11px; color: var(--ui-muted); }
+.app .supervision__note { font-size: 10px; color: var(--ui-muted); }
+.app .supervision-back { padding: 4px 7px; border-radius: 4px; border-color: var(--ui-line); font-size: 10px; }
+.app .subagent-roster { border-color: var(--ui-line); font-family: var(--font-ui); }
+
+@media (max-width: 900px) {
+  .app .chat__breadcrumb { padding-inline: 12px; gap: 6px; }
+  .app .chat__breadcrumb > span:first-child { max-width: 20%; }
+  .app .chat__breadcrumb .terminal-tools { gap: 3px; }
+  .app .supervision { padding: 22px 16px; }
+  .app .session-restore { flex-wrap: wrap; padding: 6px 12px; }
+  .app .session-restore__text { flex-basis: 100%; }
+}

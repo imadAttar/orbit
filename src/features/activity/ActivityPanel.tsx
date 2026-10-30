@@ -2,11 +2,13 @@ import { useMemo, useState } from "react";
 import { activityCategories, buildActivity } from "../../core/activity";
 import { useStore } from "../../core/store";
 import { useT } from "../../i18n/i18n";
+import { observeSession } from "../../core/supervision";
 
 export default function ActivityPanel({ archives = false }: { archives?: boolean }) {
   const t = useT();
   const projects = useStore((s) => s.projects);
   const states = useStore((s) => s.sessionStates);
+  const subagents = useStore((s) => s.sessionSubagents);
   const open = useStore((s) => s.setActiveSession);
   const archive = useStore((s) => s.archiveSession);
   const restore = useStore((s) => s.restoreSession);
@@ -15,9 +17,9 @@ export default function ActivityPanel({ archives = false }: { archives?: boolean
   const [query, setQuery] = useState("");
   const rows = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
-    return buildActivity(projects, states, archives).filter(({ project, session }) =>
+    return buildActivity(projects, states, archives, subagents).filter(({ project, session }) =>
       !search || project.name.toLocaleLowerCase().includes(search) || session.name.toLocaleLowerCase().includes(search));
-  }, [projects, states, archives, query]);
+  }, [projects, states, archives, query, subagents]);
   return <section className="activity" aria-label={t(archives ? "activity.archives" : "activity.title")}>
     <input className="activity__search" type="search" aria-label={t("activity.search")} placeholder={t("activity.search")} value={query} onChange={(e) => setQuery(e.target.value)} />
     {rows.length === 0 && <p className="activity__empty" role="status">{t(query.trim() ? "activity.noMatches" : archives ? "activity.noArchives" : "activity.empty")}</p>}
@@ -27,7 +29,7 @@ export default function ActivityPanel({ archives = false }: { archives?: boolean
       return <section className={`activity__group activity__group--${category}`} key={category} aria-label={t("activity.groupCount", { count: group.length, name: t(`activity.${category}`) })}>
         <h3 className="activity__heading">{t(`activity.${category}`)} <span aria-hidden="true">{group.length}</span></h3>
         {group.map(({ project, session }) => {
-          const state = session.claudeSessionId ? states[session.claudeSessionId] : undefined;
+          const state = observeSession(session, states, session.claudeSessionId ? subagents[session.claudeSessionId] : []);
           const blocked = state === "working" || state === "waiting";
           const timestamp = session.lastActivityAt;
           const date = timestamp !== undefined && Number.isFinite(timestamp) && timestamp >= 0 && timestamp <= Date.now() ? new Date(timestamp) : null;

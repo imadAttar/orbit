@@ -227,21 +227,42 @@ pub async fn generate_session_title(transcript_path: String) -> Result<String, S
     generate_title(prompt).await
 }
 
+const SESSION_HOOK_EVENTS: [&str; 8] = [
+    "UserPromptSubmit",
+    "Notification",
+    "PreToolUse",
+    "Stop",
+    "PermissionRequest",
+    "PostToolUse",
+    "SubagentStart",
+    "SubagentStop",
+];
+
+fn session_hook_command() -> String {
+    // Hex keeps the shell command portable and makes every source update detectable.
+    let source = include_str!("../resources/orbit-session-hook.py");
+    let hex: String = source
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    format!("{python} -c \"_m='orbit-session-state'; _identity='session_id'; exec(bytes.fromhex('{hex}'))\"")
+}
+
+fn is_orbit_hook(command: &str) -> bool {
+    command.starts_with("python3 -c \"_m='orbit-session-state';")
+        || command.starts_with("python -c \"_m='orbit-session-state';")
+}
+
 /// Enable session-state hooks in a project's .claude/settings.local.json.
-/// Installs the platform-appropriate script, then merges the hook entry —
-/// migrating any stale entry (e.g. Unix `.sh` path on Windows) to the new command.
+/// Merge observation hooks, migrating only commands with Orbit's exact marker prefix.
+/// The embedded script does not require installation into the project.
 #[tauri::command]
 pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
     use serde_json::{json, Map, Value};
 
-    // Separate state per conversation so agents in the same project cannot overwrite each other.
-    let hook_command = "python3 -c \"_m='orbit-session-state'; import sys,json,hashlib,os,pathlib,time,tempfile; d=json.load(sys.stdin); e=d.get('hook_event_name',''); s={'Stop':'idle','Notification':'waiting'}.get(e,'working'); o={'session_id':d.get('session_id',''),'state':s,'ts':int(time.time()*1000),'tool':d.get('tool_name'),'transcript_path':d.get('transcript_path') if e=='Stop' else None}; h=hashlib.md5((os.getcwd()+d.get('session_id','')).encode()).hexdigest()[:16]; p=pathlib.Path.home()/'.orbit'; p.mkdir(exist_ok=True); f=tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=p,prefix=f'session-{h}-',suffix='.tmp',delete=False); f.write(json.dumps(o)); f.close(); os.replace(f.name,p/f'session-{h}.json')\"";
-
-    let hook_command = if cfg!(windows) {
-        hook_command.replacen("python3 ", "python ", 1)
-    } else {
-        hook_command.to_string()
-    };
+    let hook_command = session_hook_command();
 
     let settings_dir = std::path::Path::new(&project_dir).join(".claude");
     let settings_path = settings_dir.join("settings.local.json");
@@ -255,7 +276,7 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
         json!({})
     };
 
-    let events = ["UserPromptSubmit", "Notification", "PreToolUse", "Stop"];
+    let events = SESSION_HOOK_EVENTS;
 
     let hooks_obj = settings
         .as_object_mut()
@@ -281,12 +302,15 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
             };
             for h in hooks.iter_mut() {
                 let existing = h.get("command").and_then(|c| c.as_str()).unwrap_or("");
-                if existing.contains("orbit-session-state") {
+                if is_orbit_hook(existing) {
                     found = true;
-                    if existing != hook_command {
+                    if existing != hook_command || h.get("timeout") != Some(&json!(5)) {
                         h.as_object_mut()
                             .ok_or(format!("hooks.{event} entry is not an object"))?
                             .insert("command".into(), json!(hook_command));
+                        h.as_object_mut()
+                            .unwrap()
+                            .insert("timeout".into(), json!(5));
                         changed = true;
                     }
                 }
@@ -297,7 +321,7 @@ pub fn enable_session_hooks(project_dir: String) -> Result<bool, String> {
             let mut hook_entry = Map::new();
             hook_entry.insert("type".into(), json!("command"));
             hook_entry.insert("command".into(), json!(hook_command));
-            hook_entry.insert("timeout".into(), json!(3000));
+            hook_entry.insert("timeout".into(), json!(5));
 
             let mut matcher = Map::new();
             matcher.insert("matcher".into(), json!(""));
@@ -334,7 +358,7 @@ pub fn check_session_hooks(project_dir: String) -> bool {
         return false;
     };
 
-    let events = ["UserPromptSubmit", "Notification", "PreToolUse", "Stop"];
+    let events = SESSION_HOOK_EVENTS;
     events.iter().all(|event| {
         settings
             .get("hooks")
@@ -348,7 +372,10 @@ pub fn check_session_hooks(project_dir: String) -> bool {
                             hs.iter().any(|h| {
                                 h.get("command")
                                     .and_then(|c| c.as_str())
-                                    .map(|c| c.contains("orbit-session-state"))
+                                    .map(|c| {
+                                        c == session_hook_command()
+                                            && h.get("timeout") == Some(&serde_json::json!(5))
+                                    })
                                     .unwrap_or(false)
                             })
                         })
@@ -470,6 +497,84 @@ mod tests {
         assert!(candidates.iter().any(|c| c == "/Users/u/.local/bin/claude"));
         assert!(candidates.iter().any(|c| c == "/opt/homebrew/bin/claude"));
         assert!(candidates.iter().any(|c| c == "/usr/local/bin/claude"));
+    }
+
+    #[test]
+    fn orbit_marker_ownership_does_not_match_other_commands() {
+        for command in [
+            "echo orbit-session-state",
+            "echo /tmp/orbit-session-state.sh",
+            "echo C:\\orbit-session-state.ps1",
+        ] {
+            assert!(
+                !is_orbit_hook(command),
+                "must preserve unrelated command: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn installed_hooks_migrate_only_owned_commands_and_use_observation_events() {
+        use serde_json::json;
+        let dir = std::env::temp_dir().join(format!("orbit-hook-migration-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        let other = json!({"type":"command", "command":"echo orbit-session-state documentation", "timeout":42});
+        let stale = json!({"type":"command", "command":"python3 -c \"_m='orbit-session-state'; print('session_id')\"", "timeout":3000});
+        let settings = json!({"env":{"KEEP":"yes"}, "hooks":{
+            "Stop":[{"matcher":"", "hooks":[other.clone(), stale]}],
+            "SessionStart":[{"hooks":[{"type":"command","command":"echo keep"}]}]
+        }});
+        let path = dir.join(".claude/settings.local.json");
+        std::fs::write(&path, settings.to_string()).unwrap();
+        assert!(!check_session_hooks(dir.to_string_lossy().into()));
+        assert!(enable_session_hooks(dir.to_string_lossy().into()).unwrap());
+        let installed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(installed["env"], settings["env"]);
+        assert_eq!(
+            installed["hooks"]["SessionStart"],
+            settings["hooks"]["SessionStart"]
+        );
+        assert_eq!(installed["hooks"]["Stop"][0]["hooks"][0], other);
+        for event in [
+            "UserPromptSubmit",
+            "Notification",
+            "PreToolUse",
+            "Stop",
+            "PermissionRequest",
+            "PostToolUse",
+            "SubagentStart",
+            "SubagentStop",
+        ] {
+            let entries = installed["hooks"][event]
+                .as_array()
+                .expect("event installed");
+            assert!(entries
+                .iter()
+                .any(|m| m["hooks"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|h| h["timeout"] == 5
+                        && h["command"]
+                            .as_str()
+                            .unwrap()
+                            .starts_with(if cfg!(windows) {
+                                "python -c"
+                            } else {
+                                "python3 -c"
+                            }))));
+        }
+        assert!(check_session_hooks(dir.to_string_lossy().into()));
+        assert!(!enable_session_hooks(dir.to_string_lossy().into()).unwrap());
+        let mut outdated = installed;
+        outdated["hooks"]["Stop"][0]["hooks"][1]["timeout"] = json!(3000);
+        std::fs::write(&path, outdated.to_string()).unwrap();
+        assert!(
+            !check_session_hooks(dir.to_string_lossy().into()),
+            "stale timeout must require migration"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

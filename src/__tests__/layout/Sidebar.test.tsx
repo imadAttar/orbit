@@ -81,7 +81,7 @@ describe("Sidebar", () => {
     expect(container.querySelectorAll(".session-item").length).toBe(3);
     expect(queryByText("Archived agent")).toBeNull();
     expect(getByRole("button", { name: "sidebar.sessions" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(getByRole("button", { name: "activity.title" }));
+    fireEvent.click(getByRole("button", { name: "sidebar.attention" }));
     expect(getByRole("region", { name: "activity.title" })).toBeTruthy();
     expect(container.querySelectorAll(".session-item").length).toBe(0);
     fireEvent.click(getByRole("button", { name: "activity.archives" }));

@@ -1,4 +1,4 @@
-name: Release (draft only)
+name: Release macOS (draft only)
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     uses: ./.github/workflows/build.yml
 
   preflight:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -28,54 +28,34 @@ jobs:
         run: |
           test "$GITHUB_REPOSITORY" = 'imadAttar/orbit'
           python3 scripts/release.py check-version --tag "$RELEASE_TAG"
-      - name: Require existing updater signing credentials (never rotate)
+      - name: Require existing updater key without exposing or rotating it
         env:
           UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        shell: bash
         run: |
           if [ -z "$UPDATER_KEY" ]; then
-            echo '::error::TAURI_SIGNING_PRIVATE_KEY is required; do not generate a replacement key.'
+            echo '::error::Existing TAURI_SIGNING_PRIVATE_KEY is required.'
             exit 1
           fi
-      - name: Refuse to change a published release
+      - name: Refuse to modify a published release
         uses: actions/github-script@v8
         with:
           script: |
             try {
               const {data} = await github.rest.repos.getReleaseByTag({...context.repo, tag: context.ref.replace('refs/tags/', '')});
-              if (!data.draft) core.setFailed('This tag already has a public release; refusing to modify it.');
+              if (!data.draft) core.setFailed('Release already published; refusing to modify it.');
             } catch (error) {
               if (error.status !== 404) throw error;
             }
 
   build:
     needs: [check, preflight]
-    permissions:
-      contents: read
-      actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-15
-            target: aarch64-apple-darwin
-            label: macos-arm64
-            bundles: app,dmg
-          - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            label: linux-x64
-            bundles: appimage,deb
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            label: windows-x64
-            bundles: msi
-    runs-on: ${{ matrix.platform }}
-    name: Build (${{ matrix.label }})
+    runs-on: macos-15
+    name: Build macOS Apple Silicon
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -86,97 +66,23 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - name: Linux system dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev
-      - name: macOS dependencies
-        if: runner.os == 'macOS'
-        run: brew install create-dmg
+      - run: brew install create-dmg
       - run: npm ci
-      - name: Build installers and updater signatures with EXISTING key
+      - name: Build DMG and signed updater with existing key
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri -- build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-      - name: Determine SignPath configuration (presence only)
-        if: runner.os == 'Windows'
-        id: signpath
-        shell: bash
-        env:
-          SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
-          SIGNPATH_ORG: ${{ secrets.SIGNPATH_ORG_ID }}
+        run: npm run tauri -- build --target aarch64-apple-darwin --bundles app,dmg -- --locked
+      - name: Verify macOS application code signature
+        run: codesign --verify --deep --strict src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Orbit.app
+      - name: Collect only exact macOS payload, installer and signature
+        run: python3 scripts/release.py collect --input src-tauri/target/aarch64-apple-darwin/release/bundle --output artifacts --platform macos-arm64
+      - name: Record signing and platform scope honestly
         run: |
-          if [ -n "$SIGNPATH_TOKEN" ] && [ -n "$SIGNPATH_ORG" ]; then
-            echo 'enabled=true' >> "$GITHUB_OUTPUT"
-          elif [ -z "$SIGNPATH_TOKEN" ] && [ -z "$SIGNPATH_ORG" ]; then
-            echo 'enabled=false' >> "$GITHUB_OUTPUT"
-            echo '::warning::SignPath is not configured: Windows MSI will be unsigned (updater signature still required).'
-          else
-            echo '::error::Incomplete SignPath configuration: both SIGNPATH_API_TOKEN and SIGNPATH_ORG_ID are required.'
-            exit 1
-          fi
-      - name: Upload MSI for Authenticode signing
-        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
-        id: unsigned
-        uses: actions/upload-artifact@v7
-        with:
-          name: signpath-input-windows-x64
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-          if-no-files-found: error
-      - name: Authenticode sign MSI with configured SignPath
-        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
-          project-slug: orbit
-          signing-policy-slug: release-signing
-          artifact-configuration-slug: initial-version
-          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: signed-msi
-      - name: Validate Authenticode and replace MSI before updater signing
-        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
-        shell: pwsh
-        run: |
-          $signed = @(Get-ChildItem signed-msi -Filter *.msi -Recurse)
-          $original = @(Get-ChildItem 'src-tauri/target/${{ matrix.target }}/release/bundle/msi' -Filter *.msi)
-          if ($signed.Count -ne 1 -or $original.Count -ne 1) { throw 'Expected exactly one signed and original MSI' }
-          $signature = Get-AuthenticodeSignature $signed[0].FullName
-          if ($signature.Status -ne 'Valid') { throw 'Signed MSI Authenticode validation failed' }
-          if ($signed[0].Name -ne $original[0].Name) { throw 'SignPath changed MSI filename' }
-          Copy-Item $signed[0].FullName $original[0].FullName -Force
-      - name: Regenerate updater signature over FINAL Authenticode-signed bytes
-        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
-        shell: bash
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          for file in src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi; do
-            npm exec -- tauri signer sign --app-version "${GITHUB_REF_NAME#v}" "$file"
-          done
-      - name: Collect exact installer/updater pairs (missing files are fatal)
-        shell: bash
-        run: python3 scripts/release.py collect --input 'src-tauri/target/${{ matrix.target }}/release/bundle' --output artifacts --platform '${{ matrix.label }}'
-      - name: Record honest code-signing status
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          SIGNPATH_ENABLED: ${{ steps.signpath.outputs.enabled }}
-        run: |
-          printf '%s\n' 'macOS: ad-hoc signed; NOT Developer ID signed or notarized.' > artifacts/SIGNING-STATUS.txt
-          if [ "$SIGNPATH_ENABLED" = true ]; then
-            printf '%s\n' 'Windows MSI: Authenticode signed through SignPath; signature verified.' >> artifacts/SIGNING-STATUS.txt
-          else
-            printf '%s\n' 'Windows MSI: UNSIGNED (SignPath not configured); SmartScreen warnings expected.' >> artifacts/SIGNING-STATUS.txt
-          fi
-          printf '%s\n' 'All three updater payloads: minisign verification against EXISTING updater public key is mandatory before draft creation.' >> artifacts/SIGNING-STATUS.txt
+          printf '%s\n' 'macOS Apple Silicon only: ad-hoc signed; NOT Developer ID signed or notarized.' 'Updater: signed with existing production key; independent minisign verification required.' 'No Windows, Linux or Intel macOS payload is advertised by this release.' > artifacts/SIGNING-STATUS.txt
       - uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.label }}
+          name: release-macos-arm64
           path: artifacts/*
           if-no-files-found: error
 
@@ -193,39 +99,37 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y minisign
       - uses: actions/download-artifact@v8
         with:
-          pattern: release-*
+          name: release-macos-arm64
           path: artifacts
-      - name: Verify all platforms, EXISTING updater signatures, manifest and SHA256
+      - name: Verify exact macOS manifest, signatures and SHA256 coverage
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python3 scripts/release.py prepare --input artifacts --output release-assets --tag "$RELEASE_TAG" --repo imadAttar/orbit
-          python3 scripts/release.py verify --output release-assets --tag "$RELEASE_TAG" --repo imadAttar/orbit
-      - name: Preserve verified output for independent review
-        uses: actions/upload-artifact@v7
+          python3 scripts/release.py prepare --input artifacts --output release-assets --tag "$RELEASE_TAG" --repo imadAttar/orbit --platforms macos-arm64
+          python3 scripts/release.py verify --output release-assets --tag "$RELEASE_TAG" --repo imadAttar/orbit --platforms macos-arm64
+      - uses: actions/upload-artifact@v7
         with:
           name: verified-release-assets
           path: release-assets/*
           if-no-files-found: error
-      - name: Refuse to update a published release (recheck before upload)
+      - name: Recheck that release is still a draft before upload
         uses: actions/github-script@v8
         with:
           script: |
             try {
               const {data} = await github.rest.repos.getReleaseByTag({...context.repo, tag: context.ref.replace('refs/tags/', '')});
-              if (!data.draft) core.setFailed('Release is public; refusing any modifications.');
+              if (!data.draft) core.setFailed('Release already public; refusing any modification.');
             } catch (error) {
               if (error.status !== 404) throw error;
             }
-      - name: Prepare draft review notes
-        run: |
-          printf '%s\n' '# DRAFT — independent verification required before publishing' '' 'Downloads: macOS Apple Silicon .dmg; Windows x64 .msi; Linux x64 .deb/.AppImage.' '' 'Verify SHA256SUMS and all updater signatures using docs/RELEASE.md.' '' '## Code signing' > release-notes.md
-          cat release-assets/SIGNING-STATUS.txt >> release-notes.md
-      - name: Create or update DRAFT ONLY
+      - name: Create independently verifiable draft only
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           fail_on_unmatched_files: true
           generate_release_notes: true
-          body_path: release-notes.md
+          body: |
+            macOS Apple Silicon release. Includes the DMG installer, updater payload/signature, latest.json and SHA256SUMS.
+            Ad-hoc signed, not Developer ID signed or notarized. Gatekeeper warnings may appear.
+            Draft awaits independent download/signature verification before authorized publication.
           files: release-assets/*

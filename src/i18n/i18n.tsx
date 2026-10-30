@@ -9,10 +9,15 @@ const translations: Record<Language, Record<string, string>> = { fr, en };
 
 type TFunction = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
-const I18nContext = createContext<{ t: TFunction; language: Language }>({
+type I18nValue = { t: TFunction; language: Language };
+const devRuntime = globalThis as typeof globalThis & { __orbitI18nContext?: React.Context<I18nValue> };
+// A retained provider and refreshed consumers must share the very same context.
+// Keep it across development module evaluations; production stays module-local.
+const I18nContext = (import.meta.env.DEV && devRuntime.__orbitI18nContext) || createContext<I18nValue>({
   t: (key) => key,
   language: "en",
 });
+if (import.meta.env.DEV) devRuntime.__orbitI18nContext = I18nContext;
 
 export function detectSystemLanguage(): Language {
   try {

@@ -100,7 +100,7 @@ describe("createTerminalKeyEventHandler — prompt navigation", () => {
       makeEvent({ key: "T", metaKey: true }),
     ]) {
       expect(handler(e)).toBe(false);
-      expect(e.preventDefault).toHaveBeenCalled();
+      expect(e.preventDefault).not.toHaveBeenCalled();
       expect(e.stopPropagation).not.toHaveBeenCalled();
     }
   });
@@ -223,6 +223,18 @@ describe("createTerminalKeyEventHandler — Windows Ctrl+V paste", () => {
     }));
   });
 
+  it("reports a rejected Windows paste to the terminal warning", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import("../../features/terminal/hooks/terminalKeyHandler");
+    const onInputError = vi.fn();
+    const handler = factory({
+      sid: "s1", term: { hasSelection: () => false, getSelection: () => "", clearSelection: vi.fn() },
+      pty: { write: vi.fn().mockRejectedValue(new Error("queue full")) }, jumpPrompt: vi.fn(),
+      readText: vi.fn().mockResolvedValue("paste"), writeText: vi.fn(), onInputError,
+    });
+    expect(handler(makeEvent({ key: "v", ctrlKey: true }))).toBe(false);
+    await vi.waitFor(() => expect(onInputError).toHaveBeenCalledOnce());
+  });
+
   it("reads clipboard and writes to PTY on Ctrl+V", async () => {
     const { createTerminalKeyEventHandler: factory } = await import(
       "../../features/terminal/hooks/terminalKeyHandler"
@@ -331,6 +343,29 @@ describe("createTerminalKeyEventHandler — macOS regression", () => {
     });
     expect(handler(makeEvent({ key: "c", ctrlKey: true }))).toBe(true);
     expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("preserves Claude Control shortcuts and reserves only clean Cmd actions on macOS", async () => {
+    const { createTerminalKeyEventHandler: factory } = await import("../../features/terminal/hooks/terminalKeyHandler");
+    const jumpPrompt = vi.fn();
+    const handler = factory({
+      sid: "s1", term: { hasSelection: () => false, getSelection: () => "", clearSelection: vi.fn() },
+      pty: { write: vi.fn() }, jumpPrompt, writeText: vi.fn(), readText: vi.fn(),
+    });
+    for (const key of ["n", "t", "w", "f", ",", "ArrowUp", "ArrowDown"]) {
+      const event = makeEvent({ key, ctrlKey: true });
+      expect(handler(event)).toBe(true);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    }
+    expect(jumpPrompt).not.toHaveBeenCalled();
+    for (const key of ["n", "t", "w", "f", ",", "+", "-"]) {
+      const event = makeEvent({ key, metaKey: true });
+      expect(handler(event)).toBe(false);
+      // Bubble to Orbit; the window handler alone prevents browser defaults.
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(event.stopPropagation).not.toHaveBeenCalled();
+    }
+    expect(handler(makeEvent({ key: "ArrowUp", metaKey: true, altKey: true }))).toBe(true);
   });
 
   it("does not intercept Ctrl+V on macOS", async () => {

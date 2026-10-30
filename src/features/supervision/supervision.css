@@ -1,0 +1,62 @@
+/* Supervision is a monitor, not a second terminal. Reuse Orbit's theme. */
+.supervision__warning { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border: 1px solid var(--border-bright); border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 12px; color: var(--yellow); }
+.supervision__warning button { padding: 6px 9px; color: var(--text-bright); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
+.supervision__warning button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.supervision { flex: 1; min-height: 0; overflow: auto; padding: 32px clamp(20px, 4vw, 56px); }
+.supervision__header { margin-bottom: 26px; }
+.supervision__eyebrow { font-size: 11px; color: var(--text-dim); letter-spacing: .06em; margin-bottom: 12px; }
+.supervision h1 { font-size: 26px; font-weight: 600; color: var(--text-bright); letter-spacing: -.04em; }
+.supervision__header p { margin-top: 8px; font-size: 13px; line-height: 1.6; color: var(--text); }
+.supervision__toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 18px; }
+.supervision__filters { display: flex; gap: 4px; flex-wrap: wrap; }
+.supervision button { font: inherit; cursor: pointer; }
+.supervision__filters button { display: flex; gap: 9px; align-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; padding: 8px 10px; font-size: 12px; color: var(--text); }
+.supervision__filters button[aria-pressed="true"] { color: var(--text-bright); background: var(--surface); border-color: var(--border-bright); }
+.supervision__filters button:hover { background: var(--highlight-subtle); }
+.supervision__filters span { font-size: 10px; min-width: 17px; text-align: center; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.supervision__search { display: flex; align-items: center; gap: 8px; flex: 0 1 270px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-dim); }
+.supervision__search .navigation-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.supervision__search input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: 11px; color: var(--text-bright); }
+.supervision__search:focus-within { border-color: var(--accent); }
+.supervision__columns, .supervision__row { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(140px, .75fr) minmax(150px, 1fr) 16px; gap: 20px; align-items: center; }
+.supervision__columns { padding: 12px 14px; border-bottom: 1px solid var(--border-bright); color: var(--text-dim); font-size: 10px; letter-spacing: .04em; }
+.supervision__row { width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--border); padding: 17px 14px; color: var(--text); transition: background 120ms; }
+.supervision__row:hover { background: var(--highlight-subtle); }
+.supervision__row:focus-visible, .supervision__filters button:focus-visible, .supervision-back:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.supervision__identity { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.supervision__project { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; color: var(--text); font-size: 10px; }
+.supervision__engine { font-size: 9px; color: var(--text-dim); }
+.supervision__engine::before { content: '·'; margin-right: 9px; }
+.supervision__identity strong { font-weight: 500; color: var(--text-bright); font-size: 13px; overflow-wrap: anywhere; }
+.supervision__status { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.supervision__status i { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; border: 1px solid currentColor; }
+.supervision__status--working { color: var(--accent); }
+.supervision__status--waiting { color: var(--yellow); }
+.supervision__status--failed { color: var(--danger); }
+.supervision__status--unread { color: var(--green); }
+.supervision__status--working i, .supervision__status--waiting i, .supervision__status--failed i, .supervision__status--unread i { background: currentColor; }
+.supervision__observation { font-size: 11px; line-height: 1.6; color: var(--text); overflow-wrap: anywhere; }
+.supervision__observation code { font-family: var(--font-mono); font-size: 10px; color: var(--text-bright); }
+.supervision__open { color: var(--text-dim); }
+.supervision__open .navigation-icon { width: 14px; height: 14px; }
+.supervision__row:hover .supervision__open { color: var(--text-bright); }
+.supervision__note { display: flex; align-items: baseline; gap: 8px; margin-top: 22px; font-size: 10px; color: var(--text-dim); line-height: 1.7; max-width: 600px; }
+.supervision__note-dot { flex: 0 0 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.supervision__empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 36px 14px; }
+.supervision__empty .navigation-icon { width: 20px; height: 20px; color: var(--text-dim); }
+.supervision__empty strong { color: var(--text-bright); font-weight: 500; }
+.supervision__empty span { color: var(--text); font-size: 12px; }
+.supervision-back { font: inherit; font-size: 11px; color: var(--text); background: transparent; border: 1px solid var(--border); padding: 5px 9px; border-radius: 5px; cursor: pointer; -webkit-app-region: no-drag; }
+.terminal-area__body--supervision { display: none !important; }
+@media (max-width: 1150px) {
+  .supervision__columns, .supervision__row { grid-template-columns: minmax(130px, 1fr) minmax(125px, .8fr) 16px; gap: 12px; }
+  .supervision__columns span:nth-child(3) { display: none; }
+  .supervision__observation { grid-column: 1 / 3; grid-row: 2; }
+  .supervision__open { grid-column: 3; grid-row: 1 / 3; }
+}
+@media (max-width: 850px) {
+  .supervision { padding: 22px 16px; }
+  .supervision__search { flex-basis: 100%; }
+  .supervision__filters { gap: 0; }
+  .supervision__filters button { padding: 8px; }
+}

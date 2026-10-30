@@ -1,5 +1,14 @@
 export type SessionType = "claude" | "terminal";
 
+/** Ephemeral hook observations; stopped means observed stop, never inferred success. */
+export type ClaudeSubagent = {
+  id: string;
+  label: string;
+  status: "running" | "stopped" | "unknown";
+  startedAt?: number;
+  updatedAt: number;
+};
+
 export type Session = {
   id: string;
   name: string;
@@ -10,6 +19,7 @@ export type Session = {
   archivedAt?: number; // reversible: keep identity, conversation and scrollback
   lastActivityAt?: number;
   unread?: boolean;
+  pinned?: boolean;
   runtimeStatus?: "running" | "exited" | "failed";
   failureReason?: "spawn" | "resume";
 };

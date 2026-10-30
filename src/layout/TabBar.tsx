@@ -11,14 +11,15 @@ function useProjectState(projectId: string): "working" | "waiting" | "idle" | nu
     const sessions = s.projects.find((p) => p.id === projectId)?.sessions;
     if (!sessions) return null;
     let hasIdle = false;
+    let hasWaiting = false;
     for (const sess of sessions) {
       if (!sess.claudeSessionId) continue;
       const state = s.sessionStates[sess.claudeSessionId];
       if (state === "working") return "working";
-      if (state === "waiting") return "waiting";
+      if (state === "waiting") hasWaiting = true;
       if (state === "idle") hasIdle = true;
     }
-    return hasIdle ? "idle" : null;
+    return hasWaiting ? "waiting" : hasIdle ? "idle" : null;
   });
 }
 

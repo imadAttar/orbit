@@ -501,12 +501,63 @@ pub fn write_orbit_file(name: String, data: String) -> Result<(), String> {
     validate_filename(&name)?;
     let home = super::pty::home_dir();
     let dir = std::path::Path::new(&home).join(".orbit");
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        tracing::warn!("Failed to create orbit directory {}: {e}", dir.display());
+    write_orbit_file_in(&dir, &name, |file| {
+        use std::io::Write;
+        file.write_all(data.as_bytes())
+    })
+}
+
+// Explicit directory and write operation keep failure tests away from the user's home.
+fn write_orbit_file_in(
+    dir: &std::path::Path,
+    name: &str,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> Result<(), String> {
+    validate_filename(name)?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Impossible de creer le repertoire {} : {e}", dir.display()))?;
+    let path = dir.join(name);
+    static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let (temp_path, mut file) = loop {
+        let nonce = NEXT_TEMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let temp_path = dir.join(format!(".orbit-save-{}-{nonce}.tmp", std::process::id()));
+        // Even a caller-supplied name matching our temporary naming scheme must
+        // never be opened as the staging file.
+        if temp_path == path {
+            continue;
+        }
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+        {
+            Ok(file) => break (temp_path, file),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("Impossible de creer {} : {e}", temp_path.display())),
+        }
+    };
+
+    let prepared = write(&mut file).and_then(|()| file.sync_all());
+    // Close before publication/cleanup, including on Windows.
+    drop(file);
+    // std::fs::rename replaces an existing file on Unix AND Windows. Never unlink
+    // the destination first: readers must see either the old or the complete new file.
+    let result = prepared.and_then(|()| std::fs::rename(&temp_path, &path));
+    if let Err(e) = result {
+        let cleanup = match std::fs::remove_file(&temp_path) {
+            Ok(()) => String::new(),
+            Err(cleanup) if cleanup.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(cleanup) => format!(
+                " ; nettoyage de {} impossible : {cleanup}",
+                temp_path.display()
+            ),
+        };
+        return Err(format!(
+            "Impossible d'ecrire {} : {e}{cleanup}",
+            path.display()
+        ));
     }
-    let path = dir.join(&name);
-    std::fs::write(&path, data.as_bytes())
-        .map_err(|e| format!("Impossible d'ecrire {} : {e}", path.display()))
+    Ok(())
 }
 
 /// Collect recent logs and system info for crash reporting.
@@ -670,22 +721,185 @@ mod tests {
 
     // --- read_orbit_file / write_orbit_file ---
 
+    struct OrbitTestDir(std::path::PathBuf);
+
+    impl OrbitTestDir {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            loop {
+                let path = std::env::temp_dir().join(format!(
+                    "orbit-atomic-test-{}-{}-{}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos(),
+                    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                ));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => return Self(path),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => panic!("create test directory: {e}"),
+                }
+            }
+        }
+    }
+
+    impl Drop for OrbitTestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[test]
-    fn orbit_file_roundtrip() {
-        let name = format!("test-orbit-{}.txt", std::process::id());
-        let data = "test content".to_string();
+    fn orbit_atomic_partial_write_failure_preserves_old_json() {
+        use std::io::Write;
+        let dir = OrbitTestDir::new();
+        let path = dir.0.join("store.json");
+        let old = r#"{"version":"old","complete":true}"#;
+        std::fs::write(&path, old).unwrap();
 
-        let write_result = write_orbit_file(name.clone(), data.clone());
-        assert!(write_result.is_ok());
+        let result = write_orbit_file_in(&dir.0, "store.json", |file| {
+            file.write_all(b"{\"version\":")?;
+            Err(std::io::Error::other("injected disk write failure"))
+        });
 
-        let read_result = read_orbit_file(name.clone());
-        assert!(read_result.is_ok());
-        assert_eq!(read_result.unwrap(), data);
+        assert!(result.unwrap_err().contains("injected disk write failure"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), old);
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 1);
+    }
 
-        // Cleanup
-        let home = pty::home_dir();
-        let path = std::path::Path::new(&home).join(".orbit").join(&name);
-        let _ = std::fs::remove_file(path);
+    #[test]
+    fn orbit_atomic_replaces_complete_json_and_cleans_temp() {
+        use std::io::Write;
+        let dir = OrbitTestDir::new();
+        let nested = dir.0.join("new").join("orbit");
+        let old = r#"{"version":"old","extra":"must disappear"}"#;
+        let new = r#"{"version":"new"}"#;
+        write_orbit_file_in(&nested, "store.json", |f| f.write_all(old.as_bytes())).unwrap();
+        write_orbit_file_in(&nested, "store.json", |f| f.write_all(new.as_bytes())).unwrap();
+        let actual = std::fs::read_to_string(nested.join("store.json")).unwrap();
+        assert_eq!(actual, new);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&actual).unwrap()["version"],
+            "new"
+        );
+        assert_eq!(std::fs::read_dir(&nested).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn orbit_atomic_publication_failure_cleans_temp_and_preserves_destination() {
+        use std::io::Write;
+        let dir = OrbitTestDir::new();
+        // A non-empty directory cannot be replaced by a file on Unix or Windows.
+        let destination = dir.0.join("store.json");
+        std::fs::create_dir(&destination).unwrap();
+        let old = r#"{"version":"old"}"#;
+        std::fs::write(destination.join("old.json"), old).unwrap();
+        let result = write_orbit_file_in(&dir.0, "store.json", |f| f.write_all(b"{}"));
+        assert!(result.unwrap_err().contains("Impossible d'ecrire"));
+        assert_eq!(
+            std::fs::read_to_string(destination.join("old.json")).unwrap(),
+            old
+        );
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn orbit_atomic_failed_rename_preserves_existing_json_file() {
+        use std::io::Write;
+        let dir = OrbitTestDir::new();
+        let path = dir.0.join("store.json");
+        let old = r#"{"version":"old"}"#;
+        std::fs::write(&path, old).unwrap();
+        let result = write_orbit_file_in(&dir.0, "store.json", |file| {
+            file.write_all(b"{\"version\":\"new\"}")?;
+            // Simulate losing the staging entry just before publication. The open
+            // handle can still sync, but rename must fail (no permission assumptions).
+            let temp = std::fs::read_dir(&dir.0)?
+                .map(|entry| entry.map(|entry| entry.path()))
+                .collect::<std::io::Result<Vec<_>>>()?
+                .into_iter()
+                .find(|entry| entry != &path)
+                .unwrap();
+            std::fs::remove_file(temp)
+        });
+        assert!(result.unwrap_err().contains("Impossible d'ecrire"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), old);
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn orbit_atomic_mkdir_failure_is_reported_before_writing() {
+        let dir = OrbitTestDir::new();
+        let blocked = dir.0.join("not-a-directory");
+        std::fs::write(&blocked, b"unchanged").unwrap();
+        let result = write_orbit_file_in(&blocked, "store.json", |_| {
+            panic!("must not write after mkdir failure")
+        });
+        assert!(result
+            .unwrap_err()
+            .contains("Impossible de creer le repertoire"));
+        assert_eq!(std::fs::read(&blocked).unwrap(), b"unchanged");
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn orbit_atomic_validates_filename_before_filesystem_changes() {
+        let dir = OrbitTestDir::new();
+        let missing = dir.0.join("must-not-be-created");
+        for name in ["../outside.json", "foo/bar.json", r"foo\bar.json"] {
+            assert!(write_orbit_file_in(&missing, name, |_| {
+                panic!("invalid filename must not reach write")
+            })
+            .is_err());
+        }
+        assert!(!missing.exists());
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn orbit_atomic_concurrent_writers_and_reader_never_observe_partial_json() {
+        use std::io::Write;
+        let dir = OrbitTestDir::new();
+        let path = dir.0.join("store.json");
+        let old = r#"{"version":"old"}"#;
+        let new = r#"{"version":"new"}"#;
+        std::fs::write(&path, old).unwrap();
+        let prepared = std::sync::Barrier::new(5);
+        let observed = std::sync::Barrier::new(5);
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let prepared = &prepared;
+                let observed = &observed;
+                let dir = &dir.0;
+                scope.spawn(move || {
+                    write_orbit_file_in(dir, "store.json", |f| {
+                        f.write_all(b"{\"version\":")?;
+                        prepared.wait();
+                        observed.wait();
+                        f.write_all(b"\"new\"}")
+                    })
+                    .unwrap();
+                });
+            }
+            prepared.wait();
+            // All four writers hold distinct, partially written temp files.
+            let snapshot = std::fs::read_to_string(&path).unwrap();
+            let entries = std::fs::read_dir(&dir.0).unwrap().count();
+            observed.wait();
+            assert_eq!(snapshot, old);
+            assert_eq!(entries, 5);
+            for _ in 0..256 {
+                let snapshot = std::fs::read_to_string(&path).unwrap();
+                assert!(
+                    snapshot == old || snapshot == new,
+                    "partial JSON: {snapshot}"
+                );
+            }
+        });
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), new);
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 1);
     }
 
     #[test]
