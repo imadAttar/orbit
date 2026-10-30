@@ -1,12 +1,15 @@
-mod watcher;
 mod claude;
 mod logging;
+mod preview;
 mod pty;
 mod statusline;
 mod terminal;
 mod validation;
+mod watcher;
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu, AboutMetadata};
+#[cfg(target_os = "macos")]
+use tauri::menu::AboutMetadata;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,6 +21,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(pty::PtyState::new())
+        .manage(preview::PreviewState::default())
         .menu(|app| {
             // --- App menu (macOS) / File menu (Windows/Linux) ---
             #[cfg(target_os = "macos")]
@@ -73,9 +77,7 @@ pub fn run() {
                 app,
                 "Affichage",
                 true,
-                &[
-                    &PredefinedMenuItem::fullscreen(app, None)?,
-                ],
+                &[&PredefinedMenuItem::fullscreen(app, None)?],
             )?;
 
             #[cfg(not(target_os = "macos"))]
@@ -107,6 +109,10 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            preview::preview_list_files,
+            preview::preview_read_file,
+            preview::preview_pick_file,
+            preview::preview_open_external,
             claude::check_claude_installed,
             claude::install_claude,
             claude::generate_title,

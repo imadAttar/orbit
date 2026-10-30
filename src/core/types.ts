@@ -1,5 +1,14 @@
 export type SessionType = "claude" | "terminal";
 
+/** Ephemeral hook observations; stopped means observed stop, never inferred success. */
+export type ClaudeSubagent = {
+  id: string;
+  label: string;
+  status: "running" | "stopped" | "unknown";
+  startedAt?: number;
+  updatedAt: number;
+};
+
 export type Session = {
   id: string;
   name: string;
@@ -7,6 +16,12 @@ export type Session = {
   claudeSessionId?: string; // Claude Code CLI session UUID for --resume
   dangerousMode?: boolean; // true = yolo mode (skip all permission prompts)
   hasConversation?: boolean; // true once the user has sent at least one prompt; gates --resume
+  archivedAt?: number; // reversible: keep identity, conversation and scrollback
+  lastActivityAt?: number;
+  unread?: boolean;
+  pinned?: boolean;
+  runtimeStatus?: "running" | "exited" | "failed";
+  failureReason?: "spawn" | "resume";
 };
 
 export type Project = {

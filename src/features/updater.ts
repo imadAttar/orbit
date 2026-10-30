@@ -15,6 +15,9 @@ export type UpdateStatus =
 let updateStatus: UpdateStatus = { state: "idle" };
 const listeners = new Set<(s: UpdateStatus) => void>();
 let pendingUpdate: Update | null = null;
+let initialized = false;
+const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let lastCheckAt: number | null = null;
 
 function notify(status: UpdateStatus) {
   updateStatus = status;
@@ -34,6 +37,9 @@ export function getUpdateStatus(): UpdateStatus {
 }
 
 export async function checkForUpdates(): Promise<void> {
+  // Keep the discovered update and any in-flight check/install authoritative.
+  if (updateStatus.state !== "idle" && updateStatus.state !== "error") return;
+  lastCheckAt = Date.now();
   notify({ state: "checking" });
 
   try {
@@ -70,6 +76,7 @@ export async function checkForUpdates(): Promise<void> {
 }
 
 async function downloadAndInstall(update: Update): Promise<void> {
+  if (updateStatus.state === "downloading" || updateStatus.state === "ready") return;
   notify({ state: "downloading", progress: 0 });
 
   let totalSize = 0;
@@ -83,16 +90,13 @@ async function downloadAndInstall(update: Update): Promise<void> {
         downloaded += (event.data as { chunkLength: number }).chunkLength;
         const progress = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : 0;
         notify({ state: "downloading", progress });
-      } else if (event.event === "Finished") {
-        notify({ state: "ready", version: update.version });
-        trackEvent("update_downloaded", { version: update.version });
       }
     });
 
-    // If downloadAndInstall resolved but Finished wasn't emitted
-    if (updateStatus.state === "downloading") {
-      notify({ state: "ready", version: update.version });
-    }
+    // Finished only means the bytes arrived; signature verification and native
+    // installation must also succeed before offering a restart.
+    notify({ state: "ready", version: update.version });
+    trackEvent("update_downloaded", { version: update.version });
   } catch (err) {
     notify({
       state: "error",
@@ -124,7 +128,22 @@ export async function triggerManualUpdate(): Promise<void> {
 
 // Check on startup after a short delay
 export function initUpdater(): void {
+  // Local development must not query release infrastructure or install updates.
+  // Explicit manual checks remain available; production startup is unchanged.
+  if (import.meta.env.DEV || initialized) return;
+  initialized = true;
+  const checkIfDue = () => {
+    if (lastCheckAt === null || Date.now() - lastCheckAt >= CHECK_INTERVAL_MS) {
+      checkForUpdates().catch(() => {});
+    }
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && lastCheckAt !== null) {
+      checkIfDue();
+    }
+  });
   setTimeout(() => {
-    checkForUpdates().catch(() => {});
+    checkIfDue();
+    setInterval(checkIfDue, CHECK_INTERVAL_MS);
   }, 5000);
 }

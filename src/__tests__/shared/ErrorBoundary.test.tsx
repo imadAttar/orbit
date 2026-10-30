@@ -14,6 +14,9 @@ vi.mock("../../i18n/i18n", () => ({
   },
 }));
 
+const mockTrack = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/analytics", () => ({ trackEvent: mockTrack }));
+
 import ErrorBoundary from "../../shared/ErrorBoundary";
 
 let shouldThrow = false;
@@ -34,6 +37,13 @@ describe("ErrorBoundary", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("emits only a normalized render error code", async () => {
+    mockTrack.mockClear();
+    shouldThrow = true;
+    render(<ErrorBoundary><ThrowingComponent /></ErrorBoundary>);
+    await vi.waitFor(() => expect(mockTrack).toHaveBeenCalledWith("error_boundary", { errorCode: "render_failed" }));
   });
 
   it("renders children when no error", () => {

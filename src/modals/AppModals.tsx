@@ -4,6 +4,7 @@ import { useStore } from "../core/store";
 import { claude, statusline } from "../core/api";
 import { trackEvent } from "../lib/analytics";
 import { useT } from "../i18n/i18n";
+import FocusTrap from "../shared/FocusTrap";
 
 // --- Statusline Prompt ---
 
@@ -13,6 +14,7 @@ export function StatuslineModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-overlay" role="presentation" onClick={dismiss} onKeyDown={(e) => { if (e.key === "Escape") dismiss(); }}>
       <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <FocusTrap onEscape={dismiss}>
         <div className="modal__title">{t("statusline.title")}</div>
         <div className="modal__body">{t("statusline.message")}</div>
         <div className="modal__hint">{t("statusline.hint")}</div>
@@ -23,6 +25,7 @@ export function StatuslineModal({ onClose }: { onClose: () => void }) {
             dismiss();
           }}>{t("statusline.install")}</button>
         </div>
+        </FocusTrap>
       </div>
     </div>
   );
@@ -43,12 +46,14 @@ export function DeleteSessionModal({ sessionId, sessions, onConfirm, onCancel }:
   return (
     <div className="modal-overlay" role="presentation" onClick={onCancel} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}>
       <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <FocusTrap onEscape={onCancel}>
         <div className="modal__title">{t("session.delete")}</div>
         <div className="modal__body">{t("session.deleteConfirm", { name: session?.name ?? "" })}</div>
         <div className="modal__actions">
           <button className="modal__btn--secondary" onClick={onCancel}>{t("common.cancel")}</button>
           <button className="modal__btn--danger" onClick={onConfirm}>{t("common.delete")}</button>
         </div>
+        </FocusTrap>
       </div>
     </div>
   );
@@ -68,6 +73,7 @@ export function InstallClaudeModal({ onClose }: InstallClaudeProps) {
   return (
     <div className="modal-overlay" role="presentation">
       <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <FocusTrap onEscape={status === "installing" ? undefined : onClose}>
         <div className="modal__title">{t("claude.notDetected")}</div>
         <div className="modal__body">
           {status === "idle" && t("claude.notInstalledMessage")}
@@ -98,6 +104,7 @@ export function InstallClaudeModal({ onClose }: InstallClaudeProps) {
             </button>
           )}
         </div>
+        </FocusTrap>
       </div>
     </div>
   );

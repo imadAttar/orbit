@@ -12,6 +12,9 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
+    // Preview pages may use normal web origins, but must never frame Orbit's
+    // own privileged UI (including redirects back to this development server).
+    headers: { "Content-Security-Policy": "frame-ancestors 'none'" },
     port: 1420,
     strictPort: true,
     host: host || false,

@@ -48,6 +48,12 @@ describe("StatusBar", () => {
     setupStore();
   });
 
+  it("reports a failed process instead of displaying its stale tool as active", () => {
+    setupStore({ projects: [{ id: "p1", name: "P", dir: "/p", sessions: [{ id: "s1", name: "Main", claudeSessionId: "c", runtimeStatus: "failed" }] }], sessionStates: { c: "working" }, sessionTools: { c: "Read" } });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain("supervision.status.failed");
+    expect(container.textContent).not.toContain("Read");
+  });
   it("renders project dir", () => {
     const { getByText } = render(<StatusBar />);
     expect(getByText("/home/user/project")).toBeTruthy();

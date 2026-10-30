@@ -3,14 +3,13 @@ import { useRef, useEffect, type ReactNode } from "react";
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export default function FocusTrap({ children }: { children: ReactNode }) {
+export default function FocusTrap({ children, onEscape }: { children: ReactNode; onEscape?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<Element | null>(null);
+  // Capture before child autoFocus/ref callbacks can move focus on commit.
+  const previousFocusRef = useRef<Element | null>(document.activeElement);
   const cachedElementsRef = useRef<HTMLElement[]>([]);
 
   useEffect(() => {
-    previousFocusRef.current = document.activeElement;
-
     const container = containerRef.current;
     if (!container) return;
 
@@ -47,15 +46,23 @@ export default function FocusTrap({ children }: { children: ReactNode }) {
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
+    // Modal bubble handlers stop propagation before document is reached.
+    document.addEventListener("keydown", handleKeyDown, true);
 
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown, true);
       if (previousFocusRef.current instanceof HTMLElement) {
         previousFocusRef.current.focus();
       }
     };
   }, []);
 
-  return <div ref={containerRef} style={{ display: "contents" }}>{children}</div>;
+  return <div ref={containerRef} style={{ display: "contents" }} onKeyDown={(e) => {
+    // Keep application shortcuts out without cancelling native field editing.
+    e.stopPropagation();
+    if (e.key === "Escape" && onEscape) {
+      e.preventDefault();
+      onEscape();
+    }
+  }}>{children}</div>;
 }

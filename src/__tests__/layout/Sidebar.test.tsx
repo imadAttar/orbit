@@ -72,6 +72,25 @@ describe("Sidebar", () => {
   const renderSidebar = () =>
     render(<Sidebar {...handlers} />);
 
+  it("switches accessible views and hides archived agents and terminals from Sessions", () => {
+    setupStore({ projects: [{ id: "p1", name: "Test Project", dir: "/tmp/test", sessions: [
+      ...sessions, { id: "a", name: "Archived agent", archivedAt: 0 },
+      { id: "t", name: "Archived shell", type: "terminal", archivedAt: 1 },
+    ] }] });
+    const { container, getByRole, queryByText } = renderSidebar();
+    expect(container.querySelectorAll(".session-item").length).toBe(3);
+    expect(queryByText("Archived agent")).toBeNull();
+    expect(getByRole("button", { name: "sidebar.sessions" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(getByRole("button", { name: "sidebar.attention" }));
+    expect(getByRole("region", { name: "activity.title" })).toBeTruthy();
+    expect(container.querySelectorAll(".session-item").length).toBe(0);
+    fireEvent.click(getByRole("button", { name: "activity.archives" }));
+    expect(getByRole("region", { name: "activity.archives" })).toBeTruthy();
+    expect(queryByText("Archived shell")).toBeTruthy();
+    fireEvent.click(getByRole("button", { name: "sidebar.sessions" }));
+    expect(container.querySelectorAll(".session-item").length).toBe(3);
+  });
+
   it("renders session list", () => {
     const { container } = renderSidebar();
     const items = container.querySelectorAll(".session-item");

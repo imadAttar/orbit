@@ -46,6 +46,7 @@ export const pty = {
     sessionName?: string | null;
     dangerousMode?: boolean;
     shellOnly?: boolean;
+    generationId?: string;
   }) => call<void>("spawn_pty", args),
 
   write: (sessionId: string, data: string) =>
@@ -54,8 +55,8 @@ export const pty = {
   resize: (sessionId: string, cols: number, rows: number) =>
     call<void>("resize_pty", { sessionId, cols, rows }),
 
-  kill: (sessionId: string) =>
-    call<void>("kill_pty", { sessionId }),
+  kill: (sessionId: string, generationId?: string) =>
+    call<void>("kill_pty", { sessionId, ...(generationId === undefined ? {} : { generationId }) }),
 
   /** Fire-and-forget kill (cleanup, no error needed) */
   killSilent: (sessionId: string) =>
@@ -127,6 +128,16 @@ export const orbit = {
 export const statusline = {
   has: () => call<boolean>("has_statusline"),
   create: () => call<void>("create_statusline"),
+};
+
+// === Isolated Preview (read-only; native scope validation is authoritative) ===
+export interface PreviewEntry { name: string; path: string; kind: "directory" | "file" }
+export interface PreviewFile { path: string; name: string; kind: "markdown" | "text" | "image"; content: string; mime: string; modifiedAt: number }
+export const preview = {
+  listFiles: (projectDir: string, relativePath = "") => call<PreviewEntry[]>("preview_list_files", { projectDir, relativePath }),
+  readFile: (projectDir: string, path: string) => call<PreviewFile>("preview_read_file", { projectDir, path }),
+  pickFile: () => call<string | null>("preview_pick_file"),
+  openExternal: (url: string) => call<void>("preview_open_external", { url }),
 };
 
 // === Event Listening ===

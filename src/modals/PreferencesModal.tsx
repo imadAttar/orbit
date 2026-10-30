@@ -89,7 +89,7 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-overlay" role="presentation" onClick={handleCancel} onKeyDown={(e) => { if (e.key === "Escape") handleCancel(); }}>
       <div className="prefs" role="dialog" aria-modal="true" data-testid="preferences-modal" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-        <FocusTrap>
+        <FocusTrap onEscape={handleCancel}>
         <nav className="prefs__nav">
           <div className="prefs__nav-title">{t("prefs.title")}</div>
           {tabs.map((tab) => (
@@ -175,6 +175,7 @@ export default function PreferencesModal({ onClose }: { onClose: () => void }) {
             <div className="prefs__panel shortcuts-grid">
               <div className="shortcuts-grid__section">{t("shortcuts.sessions")}</div>
               <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>N</kbd><span>{t("shortcuts.newSession")}</span></div>
+              <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>T</kbd><span>{t("shortcuts.newTerminal")}</span></div>
               <div className="shortcuts-grid__row"><kbd>{modLabel}</kbd><kbd>W</kbd><span>{t("shortcuts.closeSession")}</span></div>
               <div className="shortcuts-grid__row"><kbd>Ctrl</kbd><kbd>Tab</kbd><span>{t("shortcuts.nextSession")}</span></div>
               <div className="shortcuts-grid__row"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Tab</kbd><span>{t("shortcuts.prevSession")}</span></div>
