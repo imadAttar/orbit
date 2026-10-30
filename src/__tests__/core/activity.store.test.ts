@@ -11,7 +11,7 @@ const projects = () => [
 ];
 beforeEach(() => {
   vi.clearAllMocks();
-  useStore.setState({ projects: projects(), activePid: "b", activeSid: "b1", projectSessions: {}, sessionStates: {}, sessionCosts: {} });
+  useStore.setState({ loaded: true, projects: projects(), activePid: "b", activeSid: "b1", projectSessions: {}, sessionStates: {}, sessionCosts: {} });
 });
 describe("activity and resume", () => {
   it("records resume failures and process exits without leaving a dead session working", () => {

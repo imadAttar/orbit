@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, cleanup } from "@testing-library/react";
+import { renderHook, cleanup, act } from "@testing-library/react";
 import { StrictMode } from "react";
 
 // Mock dependencies before imports
@@ -60,6 +60,7 @@ describe("useAppInit", () => {
     vi.clearAllMocks();
     useStore.setState({
       init: mockInit,
+      loaded: false,
       settings: {
         terminal: "iterm2",
         editor: "vscode",
@@ -105,6 +106,23 @@ describe("useAppInit", () => {
     window.dispatchEvent(new Event("blur"));
     expect(mockTrackEvent.mock.calls.filter(([name]) => name === "window_blurred").map(([, props]) => props)).toEqual([{ activeMs: 100 }, { activeMs: 100 }]);
     vi.restoreAllMocks();
+  });
+
+  it("initializes a replacement store action instead of reusing an old resolved promise", async () => {
+    renderHook(() => useAppInit(dispatch));
+    await vi.waitFor(() => expect(mockInitUpdater).toHaveBeenCalled());
+    const replacementInit = vi.fn().mockResolvedValue(undefined);
+    act(() => useStore.setState({ init: replacementInit, loaded: false }));
+    await vi.waitFor(() => expect(replacementInit).toHaveBeenCalledOnce());
+  });
+
+  it("does not reload disk state after hot replacement when the live store is already loaded", async () => {
+    renderHook(() => useAppInit(dispatch));
+    await vi.waitFor(() => expect(mockInitUpdater).toHaveBeenCalled());
+    const replacementInit = vi.fn().mockResolvedValue(undefined);
+    act(() => useStore.setState({ init: replacementInit, loaded: true }));
+    await act(async () => {});
+    expect(replacementInit).not.toHaveBeenCalled();
   });
 
   it("does not launch after unmount while initialization is pending", async () => {

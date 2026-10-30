@@ -32,6 +32,12 @@ pub fn validate_dir(dir: &str) -> Result<(), String> {
 
 /// Validate that a resolved path stays within a base directory (canonicalized).
 pub fn validate_path_within(base_dir: &str, target: &str) -> Result<String, String> {
+    if std::path::Path::new(target)
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err("Chemin invalide (traversee de repertoire interdite)".to_string());
+    }
     let base = std::path::Path::new(base_dir)
         .canonicalize()
         .map_err(|e| format!("Repertoire base invalide : {e}"))?;
@@ -42,21 +48,33 @@ pub fn validate_path_within(base_dir: &str, target: &str) -> Result<String, Stri
         std::path::Path::new(base_dir).join(target)
     };
 
-    // Canonicalize what exists, check prefix
-    let mut check = target_path.clone();
-    while !check.exists() {
-        match check.parent() {
-            Some(parent) => check = parent.to_path_buf(),
-            None => return Err("Chemin invalide".to_string()),
+    // Resolve the existing ancestor, then rebuild only safe, missing components.
+    // Never return the unchecked original path (which can contain symlink aliases).
+    let mut check = target_path;
+    let mut missing = Vec::new();
+    loop {
+        match std::fs::symlink_metadata(&check) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let name = check.file_name().ok_or("Chemin invalide")?.to_os_string();
+                missing.push(name);
+                if !check.pop() {
+                    return Err("Chemin invalide".to_string());
+                }
+            }
+            Err(error) => return Err(format!("Chemin invalide : {error}")),
         }
     }
-    let canon = check
+    let mut canon = check
         .canonicalize()
         .map_err(|e| format!("Chemin invalide : {e}"))?;
     if !canon.starts_with(&base) {
         return Err("Chemin en dehors du repertoire autorise".to_string());
     }
-    Ok(target_path.to_string_lossy().to_string())
+    for component in missing.into_iter().rev() {
+        canon.push(component);
+    }
+    Ok(canon.to_string_lossy().to_string())
 }
 
 /// Validate that project_dir is an existing directory.
@@ -157,6 +175,50 @@ mod tests {
     }
 
     #[test]
+    fn validate_path_within_rejects_parent_components_in_missing_suffix() {
+        let dir = std::env::temp_dir().join(format!("orbit-missing-parent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(validate_path_within(dir.to_str().unwrap(), "missing/../../outside.txt").is_err());
+        assert!(validate_path_within(
+            dir.to_str().unwrap(),
+            dir.join("missing/../../outside.txt").to_str().unwrap()
+        )
+        .is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_path_within_returns_canonical_ancestor_plus_safe_missing_suffix() {
+        let root =
+            std::env::temp_dir().join(format!("orbit-canonical-suffix-{}", std::process::id()));
+        let project = root.join("project");
+        std::fs::create_dir_all(project.join("real")).unwrap();
+        std::os::unix::fs::symlink(project.join("real"), project.join("alias")).unwrap();
+        let actual =
+            validate_path_within(project.to_str().unwrap(), "alias/new/file..txt").unwrap();
+        assert_eq!(
+            std::path::PathBuf::from(actual),
+            project.canonicalize().unwrap().join("real/new/file..txt")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_path_within_rejects_existing_and_dangling_symlink_escapes() {
+        let root = std::env::temp_dir().join(format!("orbit-path-links-{}", std::process::id()));
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(root.join("outside")).unwrap();
+        std::os::unix::fs::symlink(root.join("outside"), project.join("escape")).unwrap();
+        std::os::unix::fs::symlink(root.join("not-created"), project.join("dangling")).unwrap();
+        assert!(validate_path_within(project.to_str().unwrap(), "escape/new.txt").is_err());
+        assert!(validate_path_within(project.to_str().unwrap(), "dangling/new.txt").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn validate_path_within_allows_valid() {
         let dir = std::env::temp_dir().join("orbit-test-path-within2");
         let _ = std::fs::create_dir_all(&dir);
@@ -171,7 +233,9 @@ mod tests {
 
     #[test]
     fn validate_project_dir_accepts_existing() {
-        assert!(validate_project_dir("/tmp").is_ok());
+        let dir = std::env::temp_dir();
+        assert!(dir.is_dir(), "The OS temporary directory must exist");
+        assert!(validate_project_dir(dir.to_str().unwrap()).is_ok());
     }
 
     #[test]

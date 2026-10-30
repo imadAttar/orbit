@@ -30,6 +30,7 @@ vi.mock("../../core/api", () => ({
   listen: mocks.listen, claude: { generateTitle: mocks.generateTitle },
 }));
 import { usePTY } from "../../features/terminal/hooks/usePTY";
+import * as terminalParser from "../../lib/terminalParser";
 const mount = (overrides = {}) => renderHook(() => usePTY({
   sessionId: "s1", projectDir: "/private/project", containerRef: { current: document.createElement("div") },
   activated: true, restoreChoice: "fresh", modeChoice: "normal", generation: 0,
@@ -52,12 +53,38 @@ beforeEach(() => {
     sessionCosts: {}, markConversationStarted: mocks.mark, renameSession: mocks.rename,
     setClaudeSessionId: mocks.setId, setDangerousMode: mocks.dangerous,
     setSessionRuntimeStatus: mocks.runtime,
+    updateSessionCost: vi.fn(),
   };
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const ready = async () => { await vi.waitFor(() => expect(mocks.onData).toBeTypeOf("function")); };
 
 describe("usePTY input", () => {
+  it("reports worker failures only for the current session generation and disposes the listener", async () => {
+    const onInputError = vi.fn();
+    const stop = vi.fn();
+    mocks.listen.mockImplementation((event) => Promise.resolve(event === "pty-input-error" ? stop : vi.fn()));
+    const view = mount({ onInputError }); await ready();
+    const generation = mocks.spawn.mock.calls[0][0].generationId;
+    const report = mocks.listen.mock.calls.find(([event]) => event === "pty-input-error")?.[1];
+    expect(report).toBeTypeOf("function");
+    report!({ session_id: "other", generation_id: generation });
+    report!({ session_id: "s1", generation_id: "old" });
+    expect(onInputError).not.toHaveBeenCalled();
+    report!({ session_id: "s1", generation_id: generation });
+    expect(onInputError).toHaveBeenCalledOnce();
+    view.unmount();
+    expect(stop).toHaveBeenCalledOnce();
+    report!({ session_id: "s1", generation_id: generation });
+    expect(onInputError).toHaveBeenCalledOnce();
+  });
+  it("reports rejected input to the owning terminal instead of silently dropping it", async () => {
+    const onInputError = vi.fn();
+    mocks.write.mockRejectedValue(new Error("input queue full"));
+    mount({ onInputError }); await ready();
+    mocks.onData!("large paste");
+    await vi.waitFor(() => expect(onInputError).toHaveBeenCalledOnce());
+  });
   it("never overwrites a user-chosen session title on the next prompt", async () => {
     mocks.state.projects[0].sessions[0].name = "Client kickoff";
     mount({ restoreChoice: "resume" }); await ready();
@@ -95,6 +122,26 @@ describe("usePTY input", () => {
 });
 
 describe("usePTY lifecycle", () => {
+  it("skips cost parsing for ordinary output without missing the following cost line", async () => {
+    mount(); await ready();
+    const scan = vi.spyOn(terminalParser, "stripAnsi");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(5000);
+    const output = mocks.listen.mock.calls.find(([event]) => event === "pty-output")![1];
+    for (let i = 0; i < 100; i++) output({ session_id: "s1", data: "agent progress\r\n" });
+    expect(scan).not.toHaveBeenCalled();
+    expect(mocks.output).toHaveBeenCalledTimes(100);
+    clock.mockReturnValue(6001);
+    output({ session_id: "s1", data: "Cost: $1.25" });
+    expect(scan).toHaveBeenCalledTimes(1);
+    expect(mocks.state.updateSessionCost).toHaveBeenCalledWith("s1", 1.25);
+  });
+  it("does not interpret shell output currency as agent session cost", async () => {
+    mount({ sessionType: "terminal" }); await ready();
+    const output = mocks.listen.mock.calls.find(([event]) => event === "pty-output")![1];
+    output({ session_id: "s1", data: "Invoice total: $25.00" });
+    expect(mocks.output).toHaveBeenCalledWith("Invoice total: $25.00");
+    expect(mocks.state.updateSessionCost).not.toHaveBeenCalled();
+  });
   it("saves the outgoing terminal before disposing it during a generation change", async () => {
     const options = { generation: 0 };
     const hook = mount(options); await ready();

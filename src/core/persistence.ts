@@ -24,7 +24,16 @@ interface PersistedData {
   projectSessions?: Record<string, string>; // optional for legacy data
 }
 
-let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+interface SaveState {
+  queue: Promise<void>;
+  timeout: ReturnType<typeof setTimeout> | null;
+}
+const devRuntime = globalThis as typeof globalThis & { __orbitPersistence?: SaveState };
+// Retain mutable ownership, not a copied promise: old and refreshed closures
+// must append to the same queue while native writes are still in flight.
+const saveState = (import.meta.env.DEV && devRuntime.__orbitPersistence)
+  || { queue: Promise.resolve(), timeout: null };
+if (import.meta.env.DEV) devRuntime.__orbitPersistence = saveState;
 
 function isPersistedData(data: unknown): data is PersistedData {
   if (!data || typeof data !== "object" || !("projects" in data)) return false;
@@ -93,12 +102,37 @@ async function saveData(data: PersistedData): Promise<void> {
   try {
     await fs.mkdir(DATA_DIR, { baseDir: fs.BaseDirectory.Home, recursive: true });
   } catch { /* exists */ }
-  await fs.writeTextFile(`${DATA_DIR}/${DATA_FILE}`, json, {
-    baseDir: fs.BaseDirectory.Home,
-  });
+  const temporary = `${DATA_DIR}/.data-${crypto.randomUUID()}.tmp`;
+  // Exclusive creation establishes ownership before any bytes are written.
+  // If creation fails, a preexisting file must not be removed.
+  const file = await fs.open(temporary, { baseDir: fs.BaseDirectory.Home, write: true, createNew: true });
+  try {
+    try {
+      const bytes = new TextEncoder().encode(json);
+      let offset = 0;
+      while (offset < bytes.length) {
+        const written = await file.write(bytes.subarray(offset));
+        if (written === 0) throw new Error("Ecriture interrompue sans progression");
+        offset += written;
+      }
+    } finally {
+      await file.close();
+    }
+    await fs.rename(temporary, `${DATA_DIR}/${DATA_FILE}`, {
+      oldPathBaseDir: fs.BaseDirectory.Home,
+      newPathBaseDir: fs.BaseDirectory.Home,
+    });
+  } finally {
+    // Close before publication/cleanup, including on Windows; never remove data.json.
+    await fs.remove(temporary, { baseDir: fs.BaseDirectory.Home }).catch(() => {});
+  }
 }
 
 export function debouncedSave(data: PersistedData): void {
-  if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(() => saveData(data), 300);
+  if (saveState.timeout !== null) clearTimeout(saveState.timeout);
+  saveState.timeout = setTimeout(() => {
+    saveState.timeout = null;
+    saveState.queue = saveState.queue.then(() => saveData(data))
+      .catch(() => logger.error("persistence", "Impossible de sauvegarder les donnees Orbit"));
+  }, 300);
 }

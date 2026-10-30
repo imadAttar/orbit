@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter, State};
@@ -10,9 +11,93 @@ use tauri::{AppHandle, Emitter, State};
 struct PtySession {
     generation_id: Option<String>,
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    input: PtyInput,
     child: Box<dyn Child + Send + Sync>,
     killed: Arc<AtomicBool>,
+}
+
+// Bound both queued message count and message size (at most 8 MiB queued).
+const PTY_INPUT_CAPACITY: usize = 32;
+const PTY_INPUT_MAX_BYTES: usize = 256 * 1024;
+
+struct PtyInput {
+    sender: SyncSender<String>,
+    killed: Arc<AtomicBool>,
+}
+
+impl PtyInput {
+    // Success acknowledges admission, not completion of the underlying PTY write.
+    fn enqueue(&self, data: String) -> Result<(), String> {
+        if self.killed.load(Ordering::Relaxed) {
+            return Err("Écriture PTY indisponible : session fermée ou erreur d’écriture.".into());
+        }
+        if data.len() > PTY_INPUT_MAX_BYTES {
+            return Err("Écriture PTY trop volumineuse : limite de 256 Kio par envoi.".into());
+        }
+        self.sender.try_send(data).map_err(|error| match error {
+            TrySendError::Full(_) => {
+                "File d’écriture PTY saturée : entrée refusée, réessayez après vidage.".into()
+            }
+            TrySendError::Disconnected(_) => {
+                "Écriture PTY indisponible : session fermée ou erreur d’écriture.".into()
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+fn start_pty_writer(
+    writer: Box<dyn Write + Send>,
+    killed: Arc<AtomicBool>,
+) -> (PtyInput, thread::JoinHandle<()>) {
+    start_pty_writer_with_failure(writer, killed, || {})
+}
+
+fn start_pty_writer_with_failure(
+    mut writer: Box<dyn Write + Send>,
+    killed: Arc<AtomicBool>,
+    on_failure: impl FnOnce() + Send + 'static,
+) -> (PtyInput, thread::JoinHandle<()>) {
+    let (sender, receiver) = mpsc::sync_channel::<String>(PTY_INPUT_CAPACITY);
+    let worker_killed = Arc::clone(&killed);
+    let worker = thread::spawn(move || {
+        while let Ok(data) = receiver.recv() {
+            if worker_killed.load(Ordering::Relaxed) {
+                break;
+            }
+            if writer
+                .write_all(data.as_bytes())
+                .and_then(|_| writer.flush())
+                .is_err()
+            {
+                // Never log terminal contents or OS errors that could contain secrets.
+                tracing::warn!(
+                    "Échec d’écriture PTY : file fermée, entrées en attente abandonnées."
+                );
+                // The write/flush may have blocked while this generation was killed.
+                if !worker_killed.load(Ordering::Relaxed) {
+                    on_failure();
+                }
+                break;
+            }
+        }
+    });
+    (PtyInput { sender, killed }, worker)
+}
+
+// Admission stays atomic with session removal/replacement, but never performs I/O
+// or waits for queue capacity while holding the global session map.
+fn enqueue_pty_input<T>(
+    sessions: &Mutex<HashMap<String, T>>,
+    session_id: &str,
+    data: String,
+    input: impl FnOnce(&T) -> &PtyInput,
+) -> Result<(), String> {
+    let sessions = sessions.lock().unwrap_or_else(|e| e.into_inner());
+    let session = sessions.get(session_id).ok_or_else(|| {
+        "Session PTY introuvable : le processus est peut-être terminé.".to_string()
+    })?;
+    input(session).enqueue(data)
 }
 
 pub struct PtyState {
@@ -42,6 +127,12 @@ struct PtyExit {
     session_id: String,
     generation_id: Option<String>,
     exit_code: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct PtyInputError {
+    session_id: String,
+    generation_id: Option<String>,
 }
 
 /// Get the user home directory cross-platform.
@@ -240,6 +331,17 @@ pub fn spawn_pty(
 
     let killed = Arc::new(AtomicBool::new(false));
     let killed_clone = Arc::clone(&killed);
+    // The worker owns only the writer, never the master, child or session map.
+    // Do not join it on kill: an OS write may still be blocked.
+    let input_error_app = app.clone();
+    let input_error = PtyInputError {
+        session_id: session_id.clone(),
+        generation_id: generation_id.clone(),
+    };
+    let (input, _writer_worker) =
+        start_pty_writer_with_failure(writer, Arc::clone(&killed), move || {
+            let _ = input_error_app.emit("pty-input-error", input_error);
+        });
 
     {
         let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
@@ -248,7 +350,7 @@ pub fn spawn_pty(
             PtySession {
                 generation_id: generation_id.clone(),
                 master: pair.master,
-                writer,
+                input,
                 child,
                 killed,
             },
@@ -405,19 +507,7 @@ pub fn write_pty(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
-    let session = sessions
-        .get_mut(&session_id)
-        .ok_or_else(|| format!("Session {session_id} not found (process may have exited)"))?;
-    session
-        .writer
-        .write_all(data.as_bytes())
-        .map_err(|e| format!("Write error: {e}"))?;
-    session
-        .writer
-        .flush()
-        .map_err(|e| format!("Flush error: {e}"))?;
-    Ok(())
+    enqueue_pty_input(&state.sessions, &session_id, data, |session| &session.input)
 }
 
 #[tauri::command]
@@ -494,6 +584,306 @@ pub fn kill_pty(
 mod tests {
     use super::{incomplete_utf8_tail, remove_session_for_generation, PtyExit};
     use std::collections::HashMap;
+
+    // A channel gate controls blocking; no sleeps or native PTY/processes.
+    struct BlockedWriter {
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+
+    impl std::io::Write for BlockedWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.entered.send(()).unwrap();
+            self.release.recv().unwrap();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn blocked_writer_does_not_hold_map_or_prevent_other_session_and_removal() {
+        use super::{enqueue_pty_input, start_pty_writer};
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc, Arc, Mutex,
+        };
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let killed = Arc::new(AtomicBool::new(false));
+        let (input, worker) = start_pty_writer(
+            Box::new(BlockedWriter {
+                entered: entered_tx,
+                release: release_rx,
+            }),
+            Arc::clone(&killed),
+        );
+        let (other, other_worker) =
+            start_pty_writer(Box::new(std::io::sink()), Arc::new(AtomicBool::new(false)));
+        let sessions = Arc::new(Mutex::new(HashMap::from([
+            ("A".into(), input),
+            ("B".into(), other),
+        ])));
+        let command_sessions = Arc::clone(&sessions);
+        let command = std::thread::spawn(move || {
+            enqueue_pty_input(&command_sessions, "A", "input".into(), |s| s)
+        });
+        entered_rx.recv().unwrap();
+        // try_lock detects the regression deterministically, without a timeout.
+        let accessible = match sessions.try_lock() {
+            Ok(mut map) => {
+                let b_accessible = map.get("B").unwrap().enqueue("B".into()).is_ok();
+                killed.store(true, Ordering::Relaxed);
+                let removed = map.remove("A").is_some();
+                b_accessible && removed
+            }
+            Err(_) => false,
+        };
+        // Always release and join before assertions: no worker leaks on failure.
+        release_tx.send(()).unwrap();
+        let sent = command.join().unwrap();
+        drop(sessions);
+        worker.join().unwrap();
+        other_worker.join().unwrap();
+        assert!(sent.is_ok());
+        assert!(
+            accessible,
+            "blocked A must not prevent access B or removal A"
+        );
+    }
+
+    struct RecordingWriter {
+        events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+        gate: Option<BlockedWriter>,
+    }
+
+    impl std::io::Write for RecordingWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if let Some(mut gate) = self.gate.take() {
+                std::io::Write::write(&mut gate, bytes)?;
+            }
+            self.events
+                .lock()
+                .unwrap()
+                .push(String::from_utf8(bytes.to_vec()).unwrap());
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.events.lock().unwrap().push("flush".into());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn bounded_queue_preserves_fifo_and_reports_saturation_without_losing_accepted_input() {
+        use super::{start_pty_writer, PTY_INPUT_CAPACITY};
+        use std::sync::{atomic::AtomicBool, mpsc, Arc, Mutex};
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let (input, worker) = start_pty_writer(
+            Box::new(RecordingWriter {
+                events: Arc::clone(&events),
+                gate: Some(BlockedWriter {
+                    entered: entered_tx,
+                    release: release_rx,
+                }),
+            }),
+            Arc::new(AtomicBool::new(false)),
+        );
+        input.enqueue("first".into()).unwrap();
+        entered_rx.recv().unwrap();
+        let accepted: Vec<_> = (0..PTY_INPUT_CAPACITY)
+            .map(|n| input.enqueue(n.to_string()))
+            .collect();
+        let overflow = input.enqueue("SECRET_MUST_NOT_APPEAR".into());
+        release_tx.send(()).unwrap();
+        drop(input);
+        worker.join().unwrap();
+        assert!(accepted.iter().all(Result::is_ok));
+        assert_eq!(
+            overflow.unwrap_err(),
+            "File d’écriture PTY saturée : entrée refusée, réessayez après vidage."
+        );
+        let mut expected = vec!["first".to_string(), "flush".to_string()];
+        for n in 0..PTY_INPUT_CAPACITY {
+            expected.extend([n.to_string(), "flush".into()]);
+        }
+        assert_eq!(*events.lock().unwrap(), expected);
+    }
+
+    #[test]
+    fn kill_discards_queued_input_after_inflight_write_without_waiting_for_writer() {
+        use super::start_pty_writer;
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc, Arc, Mutex,
+        };
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let killed = Arc::new(AtomicBool::new(false));
+        let (input, worker) = start_pty_writer(
+            Box::new(RecordingWriter {
+                events: Arc::clone(&events),
+                gate: Some(BlockedWriter {
+                    entered: entered_tx,
+                    release: release_rx,
+                }),
+            }),
+            Arc::clone(&killed),
+        );
+        input.enqueue("inflight".into()).unwrap();
+        entered_rx.recv().unwrap();
+        let queued = input.enqueue("must not be written".into());
+        killed.store(true, Ordering::Relaxed);
+        let after_kill = input.enqueue("must be refused immediately".into());
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        assert!(
+            after_kill.is_err(),
+            "killed generation must reject admission even while its writer is blocked"
+        );
+        assert!(queued.is_ok());
+        assert_eq!(*events.lock().unwrap(), ["inflight", "flush"]);
+        assert!(input
+            .enqueue("after kill".into())
+            .unwrap_err()
+            .contains("indisponible"));
+    }
+
+    #[test]
+    fn oversized_input_is_rejected_before_queue_admission() {
+        use super::{PtyInput, PTY_INPUT_MAX_BYTES};
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let result = PtyInput {
+            sender,
+            killed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+        .enqueue("x".repeat(PTY_INPUT_MAX_BYTES + 1));
+        assert_eq!(
+            result.unwrap_err(),
+            "Écriture PTY trop volumineuse : limite de 256 Kio par envoi."
+        );
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn write_or_flush_failure_disconnects_queue_and_returns_nonsecret_error() {
+        struct FailingWriter(bool);
+        impl std::io::Write for FailingWriter {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if self.0 {
+                    Err(std::io::Error::other("SECRET"))
+                } else {
+                    Ok(bytes.len())
+                }
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::other("SECRET"))
+            }
+        }
+        for fail_write in [true, false] {
+            let (input, worker) = super::start_pty_writer(
+                Box::new(FailingWriter(fail_write)),
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            );
+            input.enqueue("first".into()).unwrap();
+            worker.join().unwrap();
+            assert_eq!(
+                input.enqueue("SECRET".into()).unwrap_err(),
+                "Écriture PTY indisponible : session fermée ou erreur d’écriture."
+            );
+        }
+    }
+
+    // Gate either failure path so cancellation and queued input are deterministic.
+    struct GatedFailingWriter {
+        fail_write: bool,
+        gate: Option<BlockedWriter>,
+    }
+
+    impl std::io::Write for GatedFailingWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if self.fail_write {
+                std::io::Write::write(self.gate.as_mut().unwrap(), bytes)?;
+                Err(std::io::Error::other("SECRET_OS_ERROR"))
+            } else {
+                Ok(bytes.len())
+            }
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            std::io::Write::write(self.gate.as_mut().unwrap(), b"")?;
+            Err(std::io::Error::other("SECRET_OS_ERROR"))
+        }
+    }
+
+    fn failure_callback_count(fail_write: bool, cancel: bool) -> usize {
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            mpsc, Arc,
+        };
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let killed = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = Arc::clone(&calls);
+        let (input, worker) = super::start_pty_writer_with_failure(
+            Box::new(GatedFailingWriter {
+                fail_write,
+                gate: Some(BlockedWriter {
+                    entered: entered_tx,
+                    release: release_rx,
+                }),
+            }),
+            Arc::clone(&killed),
+            move || {
+                callback_calls.fetch_add(1, Ordering::Relaxed);
+            },
+        );
+        input.enqueue("SECRET_INPUT".into()).unwrap();
+        entered_rx.recv().unwrap();
+        input.enqueue("queued and discarded".into()).unwrap();
+        if cancel {
+            killed.store(true, Ordering::Relaxed);
+        }
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        assert!(input.enqueue("after failure".into()).is_err());
+        calls.load(Ordering::Relaxed)
+    }
+
+    #[test]
+    fn input_error_payload_contains_only_session_and_generation() {
+        for generation_id in [Some("generation-1".to_string()), None] {
+            let payload = serde_json::to_value(super::PtyInputError {
+                session_id: "fixture-session".into(),
+                generation_id: generation_id.clone(),
+            })
+            .unwrap();
+            assert_eq!(
+                payload,
+                serde_json::json!({
+                    "session_id": "fixture-session", "generation_id": generation_id
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn writer_failure_callback_reports_write_and_flush_failure_once() {
+        for fail_write in [true, false] {
+            assert_eq!(failure_callback_count(fail_write, false), 1);
+        }
+    }
+
+    #[test]
+    fn writer_failure_callback_is_suppressed_after_cancellation() {
+        for fail_write in [true, false] {
+            assert_eq!(failure_callback_count(fail_write, true), 0);
+        }
+    }
 
     #[test]
     fn conditional_kill_preserves_replacement_and_removes_only_matching_generation() {

@@ -1,5 +1,6 @@
 import { useStore } from "../core/store";
 import { trackEvent } from "../lib/analytics";
+import { hasAppModifier, isAppShortcut } from "../lib/shortcuts";
 
 /**
  * Keyboard shortcut handler — extracted from App.tsx for testability.
@@ -13,9 +14,14 @@ export interface KeyboardCallbacks {
 }
 
 export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCallbacks) {
-  const mod = e.metaKey || e.ctrlKey;
-  const state = useStore.getState();
+  if (e.defaultPrevented || !isAppShortcut(e)) return;
+  const target = e.target;
+  if (target instanceof Element && !target.matches(".xterm-helper-textarea") &&
+      target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
   const key = e.key.toLowerCase();
+  if (e.repeat && !["=", "+", "-"].includes(key)) return;
+  const mod = hasAppModifier(e);
+  const state = useStore.getState();
   const project = state.projects.find((p) => p.id === state.activePid);
   const visible = project?.sessions.filter((s) => s.archivedAt === undefined) ?? [];
   const sessions = [...visible.filter((s) => s.type !== "terminal"), ...visible.filter((s) => s.type === "terminal")];
@@ -23,7 +29,7 @@ export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCall
   if (mod && e.shiftKey && key === "n") {
     e.preventDefault();
     callbacks.showNewProject();
-  } else if (mod && e.key === "n") {
+  } else if (mod && key === "n") {
     e.preventDefault();
     state.addSession();
     trackEvent("session_created");
@@ -31,13 +37,13 @@ export function handleKeyboardShortcut(e: KeyboardEvent, callbacks: KeyboardCall
     e.preventDefault();
     state.addSession(undefined, "terminal");
     trackEvent("terminal_session_created");
-  } else if (mod && e.key === "w") {
+  } else if (mod && key === "w") {
     e.preventDefault();
     callbacks.confirmDeleteSession(state.activeSid);
-  } else if (mod && e.key === "f") {
+  } else if (mod && key === "f") {
     e.preventDefault();
     callbacks.toggleSearch();
-  } else if (mod && e.key === ",") {
+  } else if (mod && key === ",") {
     e.preventDefault();
     callbacks.showPreferences();
   } else if (mod && (e.key === "=" || e.key === "+")) {

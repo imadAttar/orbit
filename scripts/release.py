@@ -64,9 +64,16 @@ def verify_signature(payload, signature, pubkey):
             raise ValueError(f"Invalid updater signature: {payload.name}")
 
 
-def expected_assets(output, version):
+def expected_assets(output, version, platforms=None):
+    if isinstance(platforms, str):
+        raise ValueError("Invalid platform selection: expected a sequence of platform names")
+    platforms = tuple(PLATFORMS) if platforms is None else tuple(platforms)
+    if not platforms or len(set(platforms)) != len(platforms) or any(p not in PLATFORMS for p in platforms):
+        raise ValueError("Invalid platform selection: choose distinct supported platforms")
     selected = {}
-    for _, (key, suffix, installers) in PLATFORMS.items():
+    allowed = {"SIGNING-STATUS.txt", "latest.json", "SHA256SUMS"}
+    for platform in platforms:
+        key, suffix, installers = PLATFORMS[platform]
         for extension in set((*installers, suffix)):
             matches = [p for p in output.iterdir() if p.is_file() and p.name.endswith(extension)]
             if len(matches) != 1:
@@ -74,22 +81,26 @@ def expected_assets(output, version):
             payload = matches[0]
             if not payload.name.endswith(".app.tar.gz") and f"_{version}_" not in payload.name:
                 raise ValueError(f"Version mismatch: {payload.name}")
+            allowed.add(payload.name)
             if extension == suffix:
                 selected[key] = payload
-    if selected["darwin-aarch64"].name != "Orbit_aarch64-apple-darwin.app.tar.gz":
-        raise ValueError("Incorrect macOS updater architecture/name")
-    if "aarch64" not in next(output.glob("*.dmg")).name:
-        raise ValueError("Incorrect macOS installer architecture")
-    for pattern in ("*.AppImage", "*.deb"):
-        if "amd64" not in next(output.glob(pattern)).name:
-            raise ValueError("Incorrect Linux architecture")
-    if "x64" not in selected["windows-x86_64"].name:
+                allowed.add(payload.name + ".sig")
+    if "macos-arm64" in platforms:
+        if selected["darwin-aarch64"].name != "Orbit_aarch64-apple-darwin.app.tar.gz":
+            raise ValueError("Incorrect macOS updater architecture/name")
+        if next(output.glob("*.dmg")).name != f"Orbit_{version}_aarch64.dmg":
+            raise ValueError("Incorrect macOS installer architecture")
+    if "linux-x64" in platforms:
+        for pattern in ("*.AppImage", "*.deb"):
+            if "amd64" not in next(output.glob(pattern)).name:
+                raise ValueError("Incorrect Linux architecture")
+    if "windows-x64" in platforms and "x64" not in selected["windows-x86_64"].name:
         raise ValueError("Incorrect Windows architecture")
-    allowed = {p.name for p in selected.values()} | {p.name + ".sig" for p in selected.values()}
-    allowed |= {next(output.glob("*.dmg")).name, next(output.glob("*.deb")).name, "SIGNING-STATUS.txt", "latest.json", "SHA256SUMS"}
     for path in output.iterdir():
         if not path.is_file() or path.name not in allowed:
             raise ValueError(f"Unexpected asset: {path.name}")
+        if path.stat().st_size == 0:
+            raise ValueError(f"Empty asset: {path.name}")
     return selected
 
 
@@ -97,10 +108,10 @@ def checksum_text(output):
     return "".join(f"{digest(path)}  {path.name}\n" for path in sorted(output.iterdir()) if path.is_file() and path.name != "SHA256SUMS")
 
 
-def verify(output, tag, repo, pubkey):
+def verify(output, tag, repo, pubkey, platforms=None):
     version = version_number(tag)
     manifest = json.loads((output / "latest.json").read_text())
-    selected = expected_assets(output, version)
+    selected = expected_assets(output, version, platforms)
     if manifest["version"] != version or set(manifest["platforms"]) != set(selected):
         raise ValueError("Manifest version or platforms mismatch")
     datetime.strptime(manifest["pub_date"], "%Y-%m-%dT%H:%M:%SZ")
@@ -115,7 +126,7 @@ def verify(output, tag, repo, pubkey):
         raise ValueError("SHA256SUMS mismatch (content or coverage)")
 
 
-def prepare(assets, output, tag, repo, pubkey):
+def prepare(assets, output, tag, repo, pubkey, platforms=None):
     version = version_number(tag)
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         raise ValueError("Invalid GitHub repository")
@@ -132,7 +143,7 @@ def prepare(assets, output, tag, repo, pubkey):
         if path.stat().st_size == 0:
             raise ValueError(f"Empty asset: {path.name}")
         shutil.copy2(path, output / path.name)
-    selected = expected_assets(output, version)
+    selected = expected_assets(output, version, platforms)
     manifest = {
         "version": version,
         "notes": f"See https://github.com/{repo}/releases/tag/{tag}",
@@ -148,7 +159,7 @@ def prepare(assets, output, tag, repo, pubkey):
         }
     (output / "latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (output / "SHA256SUMS").write_text(checksum_text(output))
-    verify(output, tag, repo, pubkey)
+    verify(output, tag, repo, pubkey, platforms)
 
 
 def check_version(root, tag):
@@ -173,6 +184,8 @@ def main():
     parser.add_argument("--input", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--platform", choices=PLATFORMS)
+    parser.add_argument("--platforms", nargs="+", choices=PLATFORMS,
+                        help="Release targets for prepare/verify (default: all platforms)")
     parser.add_argument("--tag")
     parser.add_argument("--repo", default="imadAttar/orbit")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -185,9 +198,9 @@ def main():
         else:
             pubkey = json.loads((args.root / "src-tauri/tauri.conf.json").read_text())["plugins"]["updater"]["pubkey"]
             if args.command == "prepare":
-                prepare(args.input, args.output, args.tag, args.repo, pubkey)
+                prepare(args.input, args.output, args.tag, args.repo, pubkey, args.platforms)
             else:
-                verify(args.output, args.tag, args.repo, pubkey)
+                verify(args.output, args.tag, args.repo, pubkey, args.platforms)
     except (ValueError, OSError, KeyError, TypeError) as error:
         parser.exit(1, f"Release validation failed: {error}\n")
     print(f"Release {args.command}: OK")

@@ -11,9 +11,8 @@ import { trackEvent } from "../../../lib/analytics";
 import { pty, terminal, scrollback, listen, claude } from "../../../core/api";
 import { useScrollback } from "./useScrollback";
 import { createTerminalKeyEventHandler } from "./terminalKeyHandler";
-
-// File path regex for xterm link provider
-const FILE_PATH_RE = /((?:\/|\.\/|\.\.\/|[a-zA-Z]:\\)[\w.\/_\\-]+(?:\.[a-zA-Z0-9]+))(?::(\d+))?(?::(\d+))?/;
+import { terminalPreviewLinks } from "../../preview/terminalLinks";
+import { usePreviewStore } from "../../preview/previewStore";
 
 interface UsePTYOptions {
   sessionId: string;
@@ -26,6 +25,7 @@ interface UsePTYOptions {
   isVisible: boolean;
   jumpRef: React.RefObject<(dir: "prev" | "next") => void>;
   onSpawned: (spawned: boolean) => void;
+  onInputError?: () => void;
   spawned: boolean;
   sessionType?: "claude" | "terminal";
   t: ReturnType<typeof import("../../../i18n/i18n").useT>;
@@ -50,7 +50,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
   const {
     sessionId, projectDir, containerRef, activated,
     restoreChoice, modeChoice, generation, isVisible,
-    jumpRef, onSpawned, spawned, sessionType, t,
+    jumpRef, onSpawned, onInputError, spawned, sessionType, t,
   } = opts;
 
   const isTerminalSession = sessionType === "terminal";
@@ -109,21 +109,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         const line = term.buffer.active.getLine(bufferLineNumber - 1);
         if (!line) { callback(undefined); return; }
         const text = line.translateToString();
-        const links: { startIndex: number; length: number; data: { path: string; line?: number; col?: number } }[] = [];
-
-        let match;
-        const re = new RegExp(FILE_PATH_RE.source, "g");
-        while ((match = re.exec(text)) !== null) {
-          links.push({
-            startIndex: match.index,
-            length: match[0].length,
-            data: {
-              path: match[1],
-              line: match[2] ? parseInt(match[2]) : undefined,
-              col: match[3] ? parseInt(match[3]) : undefined,
-            },
-          });
-        }
+        const links = terminalPreviewLinks(text);
 
         callback(links.map((l) => ({
           range: {
@@ -131,10 +117,14 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             end: { x: l.startIndex + l.length + 1, y: bufferLineNumber },
           },
           text: text.substring(l.startIndex, l.startIndex + l.length),
-          activate() {
-            const editor = useStore.getState().settings.editor;
-            terminal.openInEditor(editor, l.data.path, l.data.line ?? 0, projectDir);
-            trackEvent("file_opened_from_terminal");
+          activate(event) {
+            const state = useStore.getState();
+            if (l.target.type === "file" && (event.metaKey || event.ctrlKey)) {
+              void terminal.openInEditor(state.settings.editor, l.target.path, l.line ?? 0, projectDir);
+            } else {
+              const project = state.projects.find(p => p.sessions.some(s => s.id === sessionId));
+              if (project) usePreviewStore.getState().dispatch(project.id, l.target);
+            }
           },
         })));
       },
@@ -145,6 +135,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
     const generationId = crypto.randomUUID();
     let processExited = false;
     let exitUnlisten: (() => void) | null = null;
+    let inputErrorUnlisten: (() => void) | null = null;
     let lastCostUpdate = 0;
     const telemetryType = isTerminalSession ? "terminal" : "agent";
     let spawnedAt: number | null = null;
@@ -205,9 +196,10 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
 
             term.write(payload.data);
 
-            // Throttle cost extraction to max 1/sec
+            // Shell output is not agent spend. Avoid ANSI/regex work for the
+            // common case of output without currency; retain the cost throttle.
             const now = Date.now();
-            if (now - lastCostUpdate > 1000) {
+            if (!isTerminalSession && payload.data.includes("$") && now - lastCostUpdate > 1000) {
               const clean = stripAnsi(payload.data);
               const costMatches = clean.match(/\$(\d+\.\d{2})/g);
               const cost = costMatches ? parseFloat(costMatches[costMatches.length - 1].slice(1)) || null : null;
@@ -236,6 +228,13 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         });
         if (cancelled) { stopListening(); return; }
         exitUnlisten = stopListening;
+        const stopInputErrors = await listen<{ session_id: string; generation_id?: string }>("pty-input-error", (payload) => {
+          if (cancelled || processExited || payload.session_id !== sid) return;
+          if (payload.generation_id !== undefined && payload.generation_id !== generationId) return;
+          onInputError?.();
+        });
+        if (cancelled) { stopInputErrors(); return; }
+        inputErrorUnlisten = stopInputErrors;
         errorCode = "spawn_failed";
         trackEvent("pty_spawn_attempted", { sessionType: telemetryType });
 
@@ -322,7 +321,9 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
         let pasting = false;
         term.onData((data) => {
           if (cancelled || processExited) return;
-          pty.write(sid, data).catch(() => {});
+          pty.write(sid, data).catch(() => {
+            if (!cancelled && !processExited) onInputError?.();
+          });
           const submit = () => {
             const prompt = inputBuffer.trim();
             if (!isTerminalSession && prompt.length > 0) useStore.getState().markConversationStarted(sid);
@@ -357,10 +358,13 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
             jumpPrompt: (dir) => jumpRef.current(dir),
             writeText,
             readText,
+            onInputError: () => { if (!cancelled && !processExited) onInputError?.(); },
           }),
         );
       } catch (err) {
         // Ensure listener is cleaned up even if spawn failed
+        inputErrorUnlisten?.();
+        inputErrorUnlisten = null;
         exitUnlisten?.();
         exitUnlisten = null;
         localUnlisten?.();
@@ -382,6 +386,7 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
       cancelled = true;
       endActivity("interrupted");
       stateUnlisten?.();
+      inputErrorUnlisten?.();
       exitUnlisten?.();
       spawnedRef.current = false;
       onSpawned(false);

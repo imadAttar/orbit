@@ -10,19 +10,27 @@ export function useTerminalSearch(
   termRef: React.RefObject<XTerm | null>,
   searchOpen: boolean,
   searchQuery: string,
+  active = true,
 ) {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!active) return;
     if (searchOpen && searchInputRef.current) {
       searchInputRef.current.focus();
       searchInputRef.current.select();
     }
-    if (!searchOpen && searchRef.current) {
-      searchRef.current.clearDecorations();
-      if (termRef.current) termRef.current.focus();
+    if (!searchOpen) {
+      searchRef.current?.clearDecorations();
+      termRef.current?.focus();
     }
-  }, [searchOpen]);
+  }, [searchOpen, active, searchRef, termRef]);
+
+  useEffect(() => {
+    if (!active || !searchOpen) return;
+    if (searchQuery) searchRef.current?.findNext(searchQuery, { incremental: true });
+    else searchRef.current?.clearDecorations();
+  }, [searchQuery, searchOpen, active, searchRef]);
 
   const doSearchNext = () => {
     if (searchQuery && searchRef.current) searchRef.current.findNext(searchQuery);

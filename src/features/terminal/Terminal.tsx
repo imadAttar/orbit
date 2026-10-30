@@ -6,6 +6,7 @@ import { usePTY } from "./hooks/usePTY";
 import { usePromptNav } from "./hooks/usePromptNav";
 import { useTerminalSearch } from "./hooks/useTerminalSearch";
 import { useTerminalRestore } from "./hooks/useTerminalRestore";
+import { useTerminalThemeSync } from "../../hooks/useThemeSync";
 import "@xterm/xterm/css/xterm.css";
 
 interface TermState {
@@ -16,6 +17,7 @@ interface TermState {
   modeChoice: "normal" | "yolo" | null;
   generation: number;
   spawned: boolean;
+  inputFailed: boolean;
   searchQuery: string;
 }
 
@@ -24,6 +26,7 @@ type TermAction =
   | { type: "setRestore"; value: TermState["restoreChoice"] }
   | { type: "setMode"; value: TermState["modeChoice"] }
   | { type: "setSpawned"; value: boolean }
+  | { type: "setInputFailed"; value: boolean }
   | { type: "setQuery"; value: string }
   | { type: "reset" };
 
@@ -33,15 +36,16 @@ function termReducer(state: TermState, action: TermAction): TermState {
     case "setRestore": return { ...state, restoreChoice: action.value };
     case "setMode": return { ...state, modeChoice: action.value };
     case "setSpawned": return { ...state, spawned: action.value };
+    case "setInputFailed": return state.inputFailed === action.value ? state : { ...state, inputFailed: action.value };
     case "setQuery": return { ...state, searchQuery: action.value };
-    case "reset": return { ...state, spawned: false, generation: state.generation + 1 };
+    case "reset": return { ...state, spawned: false, inputFailed: false, generation: state.generation + 1 };
     default: return state;
   }
 }
 
 const INITIAL_TERM_STATE: TermState = {
   activated: false, restoreChoice: "pending", modeChoice: null,
-  generation: 0, spawned: false, searchQuery: "",
+  generation: 0, spawned: false, inputFailed: false, searchQuery: "",
 };
 
 interface Props {
@@ -81,17 +85,20 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
     isVisible: isVisible ?? false,
     jumpRef,
     onSpawned: (v) => dp({ type: "setSpawned", value: v }),
+    onInputError: () => dp({ type: "setInputFailed", value: true }),
     spawned: ts.spawned,
     sessionType,
     t,
   });
+
+  useTerminalThemeSync(ptyResult.termRef);
 
   // Sync ptyTermRef for prompt navigation
   ptyTermRef.current = ptyResult.termRef.current;
 
   // --- Terminal search hook ---
   const { searchInputRef, doSearchNext, doSearchPrev } = useTerminalSearch(
-    ptyResult.searchRef, ptyResult.termRef, searchOpen, ts.searchQuery,
+    ptyResult.searchRef, ptyResult.termRef, searchOpen, ts.searchQuery, isVisible ?? false,
   );
 
   // Lazy activation: mark as activated the first time terminal becomes visible
@@ -131,6 +138,12 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
 
   return (
     <div className={`terminal-wrapper ${isVisible ? "" : "terminal-wrapper--hidden"}`}>
+      {ts.inputFailed && (
+        <div className="session-restore" role="alert">
+          <span className="session-restore__text">{t("terminal.inputFailed")}</span>
+          <button className="session-restore__btn" onClick={() => dp({ type: "setInputFailed", value: false })}>{t("common.close")}</button>
+        </div>
+      )}
       {(runtime?.runtimeStatus === "failed" || runtime?.runtimeStatus === "exited") && (
         <div className="session-restore" role="status">
           <span className="session-restore__text">{t(runtime.runtimeStatus === "exited" ? "activity.exited" : runtime.failureReason === "resume" ? "activity.resumeFailed" : "activity.spawnFailed")}</span>
@@ -240,7 +253,7 @@ export default memo(function TerminalView({ sessionId, projectDir, active, visib
         </div>
       )}
       {/* Prompt navigation — floating mini-nav */}
-      {ts.spawned && !searchOpen && (
+      {ts.spawned && !searchOpen && !ts.inputFailed && (
         <div className="prompt-nav">
           <button className="prompt-nav__btn" onClick={() => { jumpToPrompt("prev"); trackEvent("prompt_nav", { direction: "prev" }); }} title={t("nav.prevPrompt")}>&#x25B2;</button>
           <button className="prompt-nav__btn" onClick={() => { jumpToPrompt("next"); trackEvent("prompt_nav", { direction: "next" }); }} title={t("nav.nextPrompt")}>&#x25BC;</button>

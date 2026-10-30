@@ -1,7 +1,10 @@
 import { memo } from "react";
 import { THEMES } from "../lib/themes";
 import { useStore, selectActiveProject, selectActiveSession } from "../core/store";
+import { observeSession } from "../core/supervision";
+import { useT } from "../i18n/i18n";
 export default memo(function StatusBar() {
+  const t = useT();
 
   // Scalar selectors — stable refs, no unnecessary re-renders
   const activeProject = useStore(selectActiveProject);
@@ -10,7 +13,7 @@ export default memo(function StatusBar() {
   const theme = useStore((s) => s.settings.theme);
   const fontSize = useStore((s) => s.settings.fontSize);
   const claudeId = activeSession?.claudeSessionId;
-  const sessionStateName = useStore((s) => claudeId ? s.sessionStates[claudeId] ?? null : null);
+  const sessionStateName = useStore((s) => activeSession ? observeSession(activeSession, s.sessionStates, claudeId ? s.sessionSubagents[claudeId] : []) : null);
   const sessionTool = useStore((s) => claudeId ? s.sessionTools[claudeId] ?? null : null);
 
   if (!activeProject || !activeSession) return null;
@@ -24,9 +27,7 @@ export default memo(function StatusBar() {
         <>
           <div className="status-bar__sep" />
           <span className={`status-bar__state status-bar__state--${sessionStateName}`}>
-            {sessionStateName === "working" && sessionTool
-              ? sessionTool
-              : sessionStateName}
+            {t(`supervision.status.${sessionStateName}`)}{sessionStateName === "working" && sessionTool ? ` · ${sessionTool}` : ""}
           </span>
         </>
       )}

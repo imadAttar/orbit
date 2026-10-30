@@ -83,6 +83,9 @@
 }
 
 .terminal-container {
+  /* Fill the xterm inset/gutter with its own background, not chrome code-bg. */
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
   flex: 1;
   position: relative;
   overflow: hidden;

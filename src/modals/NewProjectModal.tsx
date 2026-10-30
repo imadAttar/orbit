@@ -72,7 +72,7 @@ export default function NewProjectModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-overlay" role="presentation" onClick={onClose} onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-        <FocusTrap>
+        <FocusTrap onEscape={onClose}>
         <div className="modal__title">{t("project.new")}</div>
         <div className="modal__tabs">
           <button

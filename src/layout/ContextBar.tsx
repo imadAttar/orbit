@@ -4,79 +4,77 @@ import { useT } from "../i18n/i18n";
 import { listen } from "../core/api";
 
 interface StatuslineData {
+  session_id: string;
   model?: string;
-  context_pct?: number;
-  cost?: number;
-  git_branch?: string;
+  context_pct: number;
 }
 
-export default function ContextBar() {
+/** Optional observations only: unscoped legacy metrics must never label another session. */
+export default function ContextBar({ conversationId }: { conversationId?: string }) {
   const t = useT();
   const [data, setData] = useState<StatuslineData | null>(null);
 
   useEffect(() => {
-    // Statusline is Unix-only — skip on Windows
-    if (isWindows) return;
-
+    if (isWindows || !conversationId) return;
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 
     const handleUpdate = (raw: string) => {
+      if (cancelled) return;
       try {
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.context_pct === "number" && parsed.context_pct >= 0 && parsed.context_pct <= 100) {
-          setData(parsed);
+        if (parsed?.session_id === conversationId &&
+            typeof parsed.context_pct === "number" && Number.isFinite(parsed.context_pct) &&
+            parsed.context_pct >= 0 && parsed.context_pct <= 100 &&
+            (parsed.model === undefined || typeof parsed.model === "string")) {
+          setData({ session_id: parsed.session_id, context_pct: parsed.context_pct, model: parsed.model });
         }
-      } catch (err) { import("../lib/logger").then(({ logger }) => logger.warn("contextbar", `statusline parse error: ${err}`)); }
+      } catch { /* Optional observation; never log raw payloads or interrupt Claude. */ }
     };
 
-    // Primary: event-driven via Rust file watcher
     listen<string>("statusline-updated", handleUpdate)
-      .then((fn) => { unlisten = fn; })
+      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
       .catch(() => {
-        // Fallback: poll if Tauri events unavailable
+        if (cancelled) return;
         let failures = 0;
         const poll = async () => {
-          if (!document.hasFocus()) return;
+          if (cancelled || !document.hasFocus()) return;
           try {
             const fs = await import("@tauri-apps/plugin-fs");
-            const raw = await fs.readTextFile(".orbit/statusline-latest.json", {
-              baseDir: fs.BaseDirectory.Home,
-            });
+            if (cancelled) return;
+            const raw = await fs.readTextFile(".orbit/statusline-latest.json", { baseDir: fs.BaseDirectory.Home });
             handleUpdate(raw);
             failures = 0;
           } catch {
-            failures++;
-            if (failures >= 10 && fallbackInterval) {
-              clearInterval(fallbackInterval);
-            }
+            if (++failures >= 10 && fallbackInterval) clearInterval(fallbackInterval);
           }
         };
-        poll();
-        fallbackInterval = setInterval(poll, 5000);
+        fallbackInterval = setInterval(() => { void poll(); }, 5000);
+        void poll();
       });
 
     return () => {
+      cancelled = true;
       unlisten?.();
       if (fallbackInterval) clearInterval(fallbackInterval);
     };
-  }, []);
+  }, [conversationId]);
 
-  const pct = data?.context_pct;
+  const scoped = data?.session_id === conversationId ? data : null;
+  const pct = scoped?.context_pct;
   const color = pct !== undefined && pct >= 80 ? "var(--danger)" : pct !== undefined && pct >= 50 ? "var(--yellow)" : "var(--green)";
   const fillStyle = useMemo(() => ({ width: `${pct}%`, background: color }), [pct, color]);
   const pctStyle = useMemo(() => ({ color }), [color]);
 
-  if (!data || pct === undefined) return null;
+  if (!scoped || pct === undefined) return null;
 
   return (
     <div className="context-bar">
       <span className="context-bar__label">{t("contextbar.label")}</span>
-      <div className="context-bar__track">
-        <div className="context-bar__fill" style={fillStyle} />
-      </div>
+      <div className="context-bar__track"><div className="context-bar__fill" style={fillStyle} /></div>
       <span className="context-bar__pct" style={pctStyle}>{pct}%</span>
-      {data.model && <span className="context-bar__model">{data.model}</span>}
+      {scoped.model && <span className="context-bar__model">{scoped.model}</span>}
     </div>
   );
 }

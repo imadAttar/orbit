@@ -30,24 +30,27 @@ You run Claude Code in multiple projects. You close the terminal, lose track of 
 
 ## What Orbit does
 
-Orbit wraps Claude Code CLI in a native desktop app. You keep all your projects open as tabs, resume any session after restart, and get notified when a background session needs attention.
+Orbit wraps Claude Code CLI in a native desktop app. A global project/session sidebar and a central supervision view keep active work and requests for attention visible, while terminals stay accessible. Claude Code remains the engine; Orbit does not replace its agent loop or permission system. Codex is a separate future integration, not part of the current scope.
 
 ## Features
 
-- **Session persistence** &mdash; close the app, reopen later, resume exactly where you left off
+- **Session persistence** &mdash; retain the workspace and conversation references for resuming after restart; plain terminals start a new shell
 - **Live status indicators** &mdash; see which sessions are working, idle, or waiting for input &mdash; per project, in real time
-- **Tab notifications** &mdash; tab flashes when a background session completes
-- **Multi-project tabs** &mdash; switch between projects without killing sessions
+- **Supervision** &mdash; filter all projects by observed activity or requests for attention, with explicit unknown and stopped states
+- **Global navigation** &mdash; switch between projects without killing visited sessions
+- **Observed subagents** &mdash; inspect Claude subagent start/stop observations under the owning session; a stop does not prove task success
 - **Multi-session per project** &mdash; run several Claude sessions and plain terminals in parallel
 - **Prompt navigation** &mdash; jump between prompts in terminal scrollback
-- **Auto session naming** &mdash; titles generated via Claude Haiku from your first prompt
-- **Mode toggle** &mdash; supervised (asks permissions) or autonomous (runs freely)
+- **Local session naming** &mdash; useful titles derived without an additional model request
+- **Mode toggle** &mdash; retain Claude's supervised or explicitly selected bypass-permission mode; Orbit does not auto-approve requests
 
 ## How it works
 
 Orbit detects session state (working / idle / waiting) through **Claude Code hooks** &mdash; not by parsing terminal output. On first launch, Orbit automatically adds hooks to your project's `.claude/settings.local.json` (the local settings file that isn't committed to git). If the file doesn't exist, it's created.
 
-The hooks write state to `~/.orbit/session-state.json`. Orbit watches this file with a native filesystem watcher and updates the UI in real time.
+The hooks publish small per-conversation and per-subagent `~/.orbit/session-*.json` observations atomically. Orbit watches those files and updates the UI in real time. No prompt bodies or tool results are needed for this telemetry. Turning desktop notifications off does not turn session observation off. Hook-configuration failures appear in Supervision with a retry action.
+
+Observation is scoped to the current Orbit execution. It is not a complete replay log: a very short subagent may only be observed after it stops, and a disconnected/stopped process is not reported as successfully completed. Native approval dialogs and the full Claude conversation remain in the session terminal in this version.
 
 > Orbit never modifies your global Claude Code settings (`~/.claude/settings.json`). Only project-local settings are touched. The one exception is the status line script (`~/.claude/statusline.sh`) which Orbit creates on first launch with your permission.
 
@@ -55,9 +58,11 @@ The hooks write state to `~/.orbit/session-state.json`. Orbit watches this file 
 
 | Platform | Architecture | Download |
 |----------|-------------|----------|
-| macOS | Apple Silicon | [.dmg](https://github.com/imadAttar/orbit/releases/latest) |
-| Windows | x64 | [.msi](https://github.com/imadAttar/orbit/releases/latest) |
-| Linux | x64 | [.deb / .AppImage](https://github.com/imadAttar/orbit/releases/latest) |
+| macOS | Apple Silicon | [Latest .dmg](https://github.com/imadAttar/orbit/releases/latest) |
+| Windows | x64 | [Historical release](https://github.com/imadAttar/orbit/releases/tag/v1.0.0) — not rebuilt in the current Mac release |
+| Linux | x64 | [Historical release](https://github.com/imadAttar/orbit/releases/tag/v1.0.0) — not rebuilt in the current Mac release |
+
+macOS is the current release focus. Mac builds are ad-hoc signed, not Apple Developer ID signed or notarized. The app's update banner uses the signed `latest.json` feed; see [release and updater verification](docs/RELEASE.md).
 
 ### Prerequisites
 

@@ -24,6 +24,7 @@ export default function InlineRename({
       value={text}
       onChange={(e) => setText(e.target.value)}
       onKeyDown={(e) => {
+        e.stopPropagation();
         if (e.key === "Enter") onConfirm(text.trim() || value);
         if (e.key === "Escape") onCancel();
       }}

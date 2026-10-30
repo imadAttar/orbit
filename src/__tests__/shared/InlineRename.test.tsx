@@ -33,6 +33,31 @@ describe("InlineRename", () => {
     onCancel.mockClear();
   });
 
+  it.each([" ", "Enter", "Escape", "Tab", "n"])("keeps %j inside the real rename input without activating its parent", (key) => {
+    const activate = vi.fn();
+    const parentKeyDown = vi.fn((e: React.KeyboardEvent) => {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        activate();
+      }
+    });
+    const { getByTestId } = render(
+      <div role="button" tabIndex={0} onKeyDown={parentKeyDown}>
+        <InlineRename value="old" onConfirm={onConfirm} onCancel={onCancel} />
+      </div>,
+    );
+    const input = getByTestId("inline-rename-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "new name" } });
+    const nativeEditingAllowed = fireEvent.keyDown(input, { key });
+    expect(parentKeyDown).not.toHaveBeenCalled();
+    expect(activate).not.toHaveBeenCalled();
+    if (key === " ") expect(nativeEditingAllowed).toBe(true);
+    if (key === "Enter") expect(onConfirm).toHaveBeenCalledExactlyOnceWith("new name");
+    else expect(onConfirm).not.toHaveBeenCalled();
+    if (key === "Escape") expect(onCancel).toHaveBeenCalledTimes(1);
+    else expect(onCancel).not.toHaveBeenCalled();
+  });
+
   it("renders with initial value", () => {
     const { container } = render(
       <InlineRename value="Session 1" onConfirm={onConfirm} onCancel={onCancel} />,
