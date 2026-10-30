@@ -11,8 +11,9 @@ export function stripAnsi(text: string): string {
   return text
     // OSC sequences (e.g. title set): ESC ] ... BEL or ESC ] ... ST
     .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
-    // CSI sequences: ESC [ ... letter
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
+    // ECMA-48 CSI: parameter bytes, intermediate bytes, then a final byte.
+    // Includes private parameters such as '<' in SGR mouse reports.
+    .replace(/\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]/g, "")
     // Other escape sequences (SS2, SS3, etc.)
     .replace(/\x1b[()#][A-Z0-9]/g, "")
     // Single-char escapes

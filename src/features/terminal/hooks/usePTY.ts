@@ -11,6 +11,7 @@ import { trackEvent } from "../../../lib/analytics";
 import { pty, terminal, scrollback, listen, claude } from "../../../core/api";
 import { useScrollback } from "./useScrollback";
 import { createTerminalKeyEventHandler } from "./terminalKeyHandler";
+import { LocalInputBookkeeping } from "./localInputBookkeeping";
 import { terminalPreviewLinks } from "../../preview/terminalLinks";
 import { usePreviewStore } from "../../preview/previewStore";
 
@@ -316,37 +317,22 @@ export function usePTY(opts: UsePTYOptions): UsePTYResult {
 
         // Input is used locally for conversation/title bookkeeping only. Enter
         // is not proof of an agent prompt: it may be vim, permission UI, etc.
-        let inputBuffer = "";
+        const input = new LocalInputBookkeeping();
         let titleGenerated = false;
-        let pasting = false;
         term.onData((data) => {
           if (cancelled || processExited) return;
           pty.write(sid, data).catch(() => {
             if (!cancelled && !processExited) onInputError?.();
           });
-          const submit = () => {
-            const prompt = inputBuffer.trim();
+          for (const prompt of input.feed(data)) {
             if (!isTerminalSession && prompt.length > 0) useStore.getState().markConversationStarted(sid);
             if (!titleGenerated && !isTerminalSession && prompt.length > 3 && (sessionName === "main" || /^session-\d+$/.test(sessionName ?? ""))) {
               titleGenerated = true;
               claude.generateTitle(prompt).then((title) => {
                 const current = useStore.getState().projects.flatMap((p) => p.sessions).find((s) => s.id === sid);
-                if (!cancelled && current?.name === sessionName) useStore.getState().renameSession(sid, title);
+                if (!cancelled && !processExited && current?.name === sessionName) useStore.getState().renameSession(sid, title);
               }).catch(() => {});
             }
-            inputBuffer = "";
-          };
-          // xterm delivers paste as multi-character data, optionally bracketed.
-          // Newlines within paste are text, not a separate submit confirmation.
-          const chunks = data.split(/(\x1b\[200~|\x1b\[201~)/);
-          for (const chunk of chunks) {
-            if (chunk === "\x1b[200~") { pasting = true; continue; }
-            if (chunk === "\x1b[201~") { pasting = false; continue; }
-            if (!pasting && (chunk === "\r" || chunk === "\n")) { submit(); continue; }
-            if (chunk === "\x03" || chunk === "\x15") { inputBuffer = ""; continue; }
-            if (chunk === "\x7f" || chunk === "\b") { inputBuffer = inputBuffer.slice(0, -1); continue; }
-            const text = stripAnsi(chunk).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
-            inputBuffer = (inputBuffer + text).slice(0, 4096);
           }
         });
 

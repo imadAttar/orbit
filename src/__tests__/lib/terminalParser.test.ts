@@ -7,6 +7,16 @@ describe("terminalParser", () => {
       expect(stripAnsi("\x1b[31mhello\x1b[0m")).toBe("hello");
     });
 
+    it.each([
+      "\x1b[<35;189;7M\x1b[<35;181;10M\x1b[<35;177;11M",
+      "\x1b[<0;12;8m",
+      "\x1b[38:2::255:0:0m",
+      "\x1b[>0;10;1c\x1b[?1;2c",
+      "\x1b[!p\x1b[2 q\x1b[1$z",
+      "\x1b[200~\x1b[201~\x1b[2@",
+    ])("removes the complete CSI byte grammar: %j", (sequence) => {
+      expect(stripAnsi(`before${sequence}after`)).toBe("beforeafter");
+    });
     it("removes OSC sequences (title set)", () => {
       expect(stripAnsi("\x1b]0;My Title\x07text")).toBe("text");
     });

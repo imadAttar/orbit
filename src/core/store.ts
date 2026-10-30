@@ -217,8 +217,16 @@ export const useStore = createHotStore<AppStore>((set, get) => ({
     const data = await loadData();
     if (data) {
       const projects = data.projects.map((p) => {
-        const sessions = p.sessions.map((ss) => ss.runtimeStatus === "running"
-          ? { ...ss, runtimeStatus: "exited" as const, failureReason: undefined } : ss);
+        const sessions = p.sessions.map((ss, index) => {
+          // Earlier input bookkeeping could persist SGR mouse reports as titles.
+          // Repair only protocol-only signatures (including a truncated final
+          // report), never a meaningful/manual name or conversation identity.
+          const damaged = ss.type !== "terminal" && typeof ss.name === "string" && ss.name.length <= 4096
+            && /^(?:<?\d+;\d+;\d+[Mm]){2,}(?:<?[\d;]*)?$/.test(ss.name);
+          const session = damaged ? { ...ss, name: `session-${index + 1}` } : ss;
+          return session.runtimeStatus === "running"
+            ? { ...session, runtimeStatus: "exited" as const, failureReason: undefined } : session;
+        });
         if (!sessions.some((ss) => ss.archivedAt === undefined)) sessions.push(makeSession("main"));
         return { ...p, sessions };
       });
