@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   frontend:
+    name: Typecheck & Tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
