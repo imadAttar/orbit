@@ -30,9 +30,9 @@ Orbit wraps the Claude Code CLI in a Tauri desktop app. Keep several projects an
 
 ## Current status
 
-- **Source on `main`: 1.2.1.** The features below describe this source version.
-- **Latest published download: v1.0.0.** The 1.2.1 installer has not been published yet; downloading the latest public release does not include all changes described below.
-- **Next binary release: macOS Apple Silicon only.** Windows and Linux remain source/CI targets, but no new installers for those platforms are announced here. There is no new Intel Mac build.
+- **Source on `main`: 1.0.1.** The features below describe this source version.
+- **Published downloads:** see the [latest public release](https://github.com/imadAttar/orbit/releases/latest). A development tag does not mean an installer was published. Public release numbering resumes after v1.0.0; unused unpublished development tags have been removed.
+- **Binary releases and native CI: macOS Apple Silicon only.** Windows/Linux installers are historical and do not block current releases. There is no new Intel Mac build.
 
 ## Features
 
@@ -45,7 +45,7 @@ Orbit wraps the Claude Code CLI in a Tauri desktop app. Keep several projects an
 - **Themes** — nine palettes applied to the app chrome, terminals and local preview surfaces, including preference previews and cancellation. External websites, images and native OS dialogs retain their own appearance.
 - **Notifications** — report observed requests for attention and return to idle. A failed read, missing session or stopped process does not become a successful completion. Disabling notifications does not disable observation.
 - **Explicit permission modes** — normal Claude permissions remain available; bypass-permission mode is an explicit user choice. Orbit does not automatically approve requests.
-- **Update checks** — the 1.2.1 source checks at startup, periodically every six hours, and when the app becomes visible again if a check is due, subject to update preferences. No forced restart.
+- **Update checks** — the 1.0.1 source checks at startup, periodically every six hours, and when the app becomes visible again if a check is due, subject to update preferences. No forced restart.
 
 ## How it works
 
@@ -69,13 +69,17 @@ Web pages load separately from the privileged app UI. Some sites refuse embeddin
 
 The updater reads `latest.json` to discover a release. **The manifest itself is unsigned; the update payload is signed and verified with the existing updater public key.** Downloaded release artifacts must pass signature and checksum checks before publication.
 
+Public versioning resumes at **1.0.1** after the published 1.0.0. If you installed an unpublished development build numbered 1.1.x/1.2.x, install the public DMG manually once: the updater will not automatically downgrade a higher local version.
+
 macOS packaging uses **ad-hoc code signing**, not Apple Developer ID signing or notarization. Gatekeeper warnings may appear. Updater signatures and Apple notarization are different mechanisms. See the [release runbook](docs/RELEASE.md) for the draft-first workflow and verification gates.
 
 ## Download
 
-The currently published installers are from **v1.0.0**, not the 1.2.1 source revision:
+Download the Mac installer from the [latest published release](https://github.com/imadAttar/orbit/releases/latest). While a release is being prepared, the published installer can lag behind the source revision.
 
-| Platform | Architecture | Published download |
+The historical v1.0.0 installers remain available:
+
+| Platform | Architecture | Historical download |
 |----------|--------------|--------------------|
 | macOS | Apple Silicon | [v1.0.0 DMG](https://github.com/imadAttar/orbit/releases/download/v1.0.0/Orbit_1.0.0_aarch64.dmg) |
 | Windows | x64 | [v1.0.0 MSI](https://github.com/imadAttar/orbit/releases/download/v1.0.0/Orbit_1.0.0_x64_en-US.msi) |
@@ -111,7 +115,7 @@ npm run tauri -- build          # Local native build for the host platform
 
 Production updater signing uses the existing GitHub Actions secrets. Do not commit private keys, credentials or local QA reports. Local builds are not automatically published releases.
 
-Pull requests run the frontend/typecheck/build and release-helper checks. The native Mac/Windows/Linux matrix is reserved for release tags or explicit manual runs; a green PR check does not establish native Windows validation. Packaging and public availability require the separate release gates.
+Pull requests run the frontend/typecheck/build and release-helper checks. Native CI runs on macOS for release tags or explicit manual runs; Windows/Linux native checks are not release prerequisites. Native jobs have a 30-minute limit and the Rust test step a 10-minute limit. Packaging and public availability require the separate Mac build, updater-signature and checksum gates; the workflow creates a draft, not an automatically public release.
 
 ## Architecture
 
