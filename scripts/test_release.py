@@ -297,5 +297,23 @@ class ReleaseTests(unittest.TestCase):
         release.verify(output, "v1.1.0", "imadAttar/orbit", pubkey)
 
 
+    def test_release_native_matrix_is_macos_only(self):
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/build.yml").read_text()
+        native = workflow.split("  rust:\n", 1)[1]
+        self.assertIn("        os: [macos-15]\n", native)
+        self.assertNotIn("windows-latest", native)
+        self.assertNotIn("ubuntu-22.04", native)
+        release_workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/release.yml").read_text()
+        self.assertIn("    needs: [check, preflight]\n", release_workflow)
+        self.assertIn("    needs: build\n", release_workflow)
+        self.assertIn("          draft: true\n", release_workflow)
+
+    def test_native_ci_bounds_test_and_job_duration(self):
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/build.yml").read_text()
+        native = workflow.split("  rust:\n", 1)[1]
+        self.assertIn("    timeout-minutes: 30\n", native)
+        self.assertIn("      - name: Run Rust tests with bounded execution\n        timeout-minutes: 10\n        run: cargo test --manifest-path src-tauri/Cargo.toml --locked", native)
+
+
 if __name__ == "__main__":
     unittest.main()
